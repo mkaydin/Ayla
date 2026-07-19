@@ -1,0 +1,24 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "demongirl.moc3",
+		"Textures": [
+			"demongirl.4096/texture_00.png",
+			"demongirl.4096/texture_01.png"
+		],
+		"Physics": "demongirl.physics3.json",
+		"DisplayInfo": "demongirl.cdi3.json"
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": []
+		}
+	]
+}
