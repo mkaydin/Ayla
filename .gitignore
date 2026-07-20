@@ -1,2 +1,38 @@
+# Dependencies
+node_modules/
 
+# Build output
+dist/
+src-tauri/target/
+
+# Rust build artifacts
+*.rs.bk
+*.pyc
+__pycache__/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# ONNX model files (large binaries, downloaded separately)
+models/*.onnx
+models/kws/*.onnx
+tts/tts_piper_amy_low/*.onnx
+tts/tts_piper_amy_en_model/*.onnx
+
+# Sherpa-ONNX (vendored dependency)
 /tts/sherpa-onnx
+
+# graphify analysis output
+graphify-out/
+
+# IDE
+.vscode/
+.idea/
