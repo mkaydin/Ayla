@@ -1,6 +1,8 @@
 mod tts;
+mod voice;
 
 use tts::TtsState;
+use voice::VoiceState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -8,7 +10,12 @@ pub fn run() {
     .manage(TtsState {
       engine: std::sync::Mutex::new(tts::TtsEngine::new()),
     })
-    .invoke_handler(tauri::generate_handler![tts::generate_tts])
+    .manage(VoiceState::default())
+    .invoke_handler(tauri::generate_handler![
+      tts::generate_tts,
+      voice::start_listening,
+      voice::stop_listening
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

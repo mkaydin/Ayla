@@ -237,6 +237,10 @@ async function main() {
   // ---------------------------------------------------------------------------
   let audioCtx, analyser, micData;
   async function enableLipSync() {
+    if (window.__TAURI_INTERNALS__) {
+      setStatus('Lip-sync uses Voice button in Tauri.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -249,7 +253,7 @@ async function main() {
       state.lipSync = true;
       setStatus('Lip-sync ON (mic active).');
     } catch (err) {
-      setStatus('Mic denied: ' + err.message);
+      setStatus('Mic: ' + err.message);
       state.lipSync = false;
     }
   }
@@ -371,6 +375,62 @@ async function main() {
     setStatus('Pose + view reset.');
   });
 
+  // Voice input toggle (mic → VAD → STT → auto-send to chat)
+  let voiceListening = false;
+  const voiceBtn = document.getElementById('btn-voice');
+  voiceBtn?.addEventListener('click', async () => {
+    try {
+      const ipc = window.__TAURI_INTERNALS__;
+      const invokeFn = ipc?.invoke || ipc?.ipc?.invoke || ipc?.core?.invoke;
+      if (!invokeFn) { setStatus('Voice: Tauri only'); return; }
+      if (!voiceListening) {
+        await invokeFn('start_listening');
+        voiceListening = true;
+        voiceBtn.textContent = '🎤 Stop';
+        setStatus('Listening…');
+      } else {
+        await invokeFn('stop_listening');
+        voiceListening = false;
+        voiceBtn.textContent = '🎤 Voice';
+        setStatus('Voice stopped.');
+      }
+    } catch (e) {
+      setStatus('Voice error: ' + (e.message || e));
+      voiceListening = false;
+    }
+  });
+
+  // Hook Tauri events for voice recognition
+  (async () => {
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      listen('partial-transcript', (e) => {
+        setStatus('🎤 ' + e.payload);
+      });
+      listen('final-transcript', (e) => {
+        setStatus('Heard: ' + (e.payload || '').slice(0, 60));
+      });
+      listen('voice-query', (e) => {
+        const text = (e.payload || '').trim();
+        if (text.length > 0) {
+          chatInput.value = text;
+          chatInput.style.height = 'auto';
+          chatSendMessage();
+        }
+      });
+      listen('speech-detected', () => {
+        setStatus('🔊 Heard you…');
+      });
+      listen('voice-error', (e) => {
+        setStatus('Mic error: ' + e.payload);
+        voiceListening = false;
+        if (voiceBtn) voiceBtn.textContent = '🎤 Voice';
+      });
+    } catch (e) {
+      // event API not available (browser dev mode)
+    }
+  })();
+
   // Initial button labels
   updateBtnLabels();
 
@@ -454,7 +514,7 @@ async function main() {
   const chatClose = document.getElementById('chat-close');
   const chatOpen = document.getElementById('chat-open');
 
-  const CHAT_SYSTEM = `Your name is Hecate. You are a demon girl assistant. Answer questions correctly and helpfully — give real, accurate answers. Add a hint of your mischievous demon-girl personality, but keep it subdued.
+  const CHAT_SYSTEM = `Your name is Alice. You are a demon girl assistant. Answer questions correctly and helpfully — give real, accurate answers. Add a hint of your mischievous demon-girl personality, but keep it subdued.
 
 You MUST start EVERY answer with an expression tag in brackets that matches your emotional reaction. Choose ONE:
 [amazed] — surprising, impressive, or flattering message
