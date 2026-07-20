@@ -61,25 +61,65 @@ Microphone ──► Silero VAD ──► SenseVoice STT ──► Chat Input
 
 ## Model Files
 
-Download the ONNX models into the project directories:
+All models are downloaded from [Sherpa-ONNX releases](https://github.com/k2-fsa/sherpa-onnx/releases) and placed into `models/` and `tts/` directories. These are **not tracked in git** due to their size — download them after cloning.
+
+### Quick download (all models)
+
+```bash
+# --- Speech-to-Text model (SenseVoice, ~240 MB) ---
+curl -L -o /tmp/sense-voice.tar.bz2 \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2
+mkdir -p models
+tar -xjf /tmp/sense-voice.tar.bz2 -C /tmp/
+cp /tmp/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/sense-voice.onnx models/
+cp /tmp/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt models/sense-voice-tokens.txt
+
+# --- Voice Activity Detection (Silero VAD, ~644 KB) ---
+curl -L -o /tmp/silero-vad.tar.bz2 \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-silero-vad-1.0.0.tar.bz2
+mkdir -p /tmp/silero-vad
+tar -xjf /tmp/silero-vad.tar.bz2 -C /tmp/silero-vad/
+cp /tmp/silero-vad/silero_vad.onnx models/
+
+# --- Text-to-Speech (Piper amy-low, ~63 MB) ---
+curl -L -o /tmp/amy-low.tar.bz2 \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2
+curl -L -o /tmp/espeak-ng-data.tar.bz2 \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2
+mkdir -p tts/tts_piper_amy_low
+tar -xjf /tmp/amy-low.tar.bz2 -C tts/tts_piper_amy_low/ --strip-components=1
+tar -xjf /tmp/espeak-ng-data.tar.bz2 -C tts/tts_piper_amy_low/
+
+# --- Cleanup ---
+rm -rf /tmp/sense-voice.tar.bz2 /tmp/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17 \
+       /tmp/silero-vad.tar.bz2 /tmp/silero-vad \
+       /tmp/amy-low.tar.bz2 /tmp/espeak-ng-data.tar.bz2
+```
+
+### Expected directory layout after download
 
 ```
 models/
 ├── silero_vad.onnx           # Silero Voice Activity Detection
 ├── sense-voice.onnx          # SenseVoice speech-to-text (~240 MB)
-└── sense-voice-tokens.txt    # Token vocabulary
+└── sense-voice-tokens.txt    # Token vocabulary (from tokens.txt in archive)
 
 tts/tts_piper_amy_low/
-├── en_US-amy-low.onnx        # Piper TTS voice (~63 MB)
-├── en_US-amy-low.onnx.json   # Model config
-├── espeak-ng-data/           # Phonemizer data
-└── tokens.txt                # Voice tokens
+├── en_US-amy-low.onnx        # Piper VITS TTS voice (~63 MB)
+├── en_US-amy-low.onnx.json   # Model config (phoneme map, sample rate)
+├── tokens.txt                # Voice tokens
+├── MODEL_CARD                # Model metadata
+└── espeak-ng-data/           # Phonemizer data (120 files)
 ```
 
-Model sources:
-- SenseVoice: [Sherpa-ONNX model list](https://github.com/k2-fsa/sherpa-onnx/releases)
-- Silero VAD: [Sherpa-ONNX Silero VAD](https://github.com/k2-fsa/sherpa-onnx/releases)
-- Piper amy-low: [Sherpa-ONNX TTS models](https://github.com/k2-fsa/sherpa-onnx/releases)
+### Model sources
+
+| Model | Sherpa-ONNX release | Size |
+|---|---|---|
+| SenseVoice | `asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17` | ~240 MB |
+| Silero VAD | `asr-models/sherpa-onnx-silero-vad-1.0.0` | ~644 KB |
+| Piper amy-low | `tts-models/vits-piper-en_US-amy-low` | ~63 MB |
+| espeak-ng-data | `tts-models/espeak-ng-data` | ~16 MB |
 
 ## Setup
 
@@ -91,8 +131,8 @@ cd Alice_AI_Demoness
 # 2. Install Node dependencies
 npm install
 
-# 3. Download ONNX models (see Model Files section above)
-#    Place them in models/ and tts/tts_piper_amy_low/
+# 3. Download ONNX models (run the Quick Download script from Model Files section)
+#    See "Model Files" section above for detailed instructions.
 
 # 4. Pull the LLM model
 ollama pull gemma4:e4b
