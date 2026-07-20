@@ -27,6 +27,9 @@ models/kws/*.onnx
 tts/tts_piper_amy_low/*.onnx
 tts/tts_piper_amy_en_model/*.onnx
 
+# Large binary files
+DemonGirl-UnzipThisFolder.zip
+
 # Sherpa-ONNX (vendored dependency)
 /tts/sherpa-onnx
 
