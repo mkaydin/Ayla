@@ -129,6 +129,8 @@ git clone <repo-url>
 cd Alice_AI_Demoness
 
 # 2. Install Node dependencies
+
+# 2. Install Node dependencies
 npm install
 
 # 3. Download ONNX models (run the Quick Download script from Model Files section)
