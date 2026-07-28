@@ -130,3 +130,8 @@ pub fn generate_tts(state: tauri::State<'_, TtsState>, text: String) -> Vec<u8> 
     let engine = state.engine.lock().unwrap();
     engine.generate(&text)
 }
+
+#[tauri::command]
+pub fn stop_tts() -> Result<(), String> {
+    Ok(())
+}

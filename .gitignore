@@ -33,6 +33,9 @@ DemonGirl-UnzipThisFolder.zip
 # Sherpa-ONNX (vendored dependency)
 /tts/sherpa-onnx
 
+# Docker data volumes
+data/
+
 # graphify analysis output
 graphify-out/
 

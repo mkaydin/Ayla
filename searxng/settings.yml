@@ -1,0 +1,58 @@
+use_default_settings: true
+
+general:
+  instance_name: "Alice Meta Search"
+  debug: false
+  privacypolicy_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "CHANGE_THIS_TO_RANDOM_SECRET_KEY"
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+  image_proxy: false
+
+outgoing:
+  request_timeout: 30.0
+  max_request_timeout: 60.0
+
+engines:
+  - name: arxiv
+    engine: arxiv
+    shortcut: arx
+    disabled: false
+
+  - name: pubmed
+    engine: pubmed
+    shortcut: pm
+    disabled: false
+
+  - name: semantic scholar
+    engine: semantic_scholar
+    shortcut: ss
+    disabled: false
+
+  - name: crossref
+    engine: crossref
+    shortcut: cr
+    disabled: false
+
+  - name: dblp
+    engine: dblp
+    shortcut: dblp
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false

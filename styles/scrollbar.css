@@ -1,0 +1,21 @@
+/* ───────────────────────────────────────────────────────────
+   Global scrollbar — applied to all scrollable containers
+   ─────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.14);
+}

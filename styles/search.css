@@ -1,0 +1,199 @@
+/* ── Search Panel ─────────────────────────────────────────── */
+
+.search-panel {
+  min-width: 480px;
+}
+
+.search-progress-log {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.search-log-entry {
+  padding: 2px 0;
+  color: var(--text-muted);
+}
+
+.search-log-entry.progress {
+  color: #93c5fd;
+}
+
+.search-log-entry.complete {
+  color: #86efac;
+}
+
+.search-log-entry.error {
+  color: #fca5a5;
+}
+
+.search-progress-bar {
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: var(--space-sm) 0;
+}
+
+.search-progress-fill {
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.search-query-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+.search-query-text {
+  font-size: var(--font-size-md);
+  color: var(--text-accent);
+}
+
+/* Search history */
+.search-history-section {
+  margin-top: var(--space-md);
+}
+
+.search-history-title {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.search-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: var(--font-size-xs);
+}
+
+.search-history-query {
+  color: var(--text-secondary);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-history-meta {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin: 0 var(--space-md);
+}
+
+.search-history-view {
+  background: none;
+  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.search-history-view:hover {
+  border-color: var(--border-active);
+  color: var(--text-primary);
+}
+
+/* Paper cards */
+.search-paper-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.search-paper-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+
+.search-paper-rank {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.search-paper-title {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: 500;
+  flex: 1;
+  margin: 0 var(--space-sm);
+}
+
+.search-paper-score {
+  font-size: var(--font-size-xs);
+  color: var(--text-accent);
+  flex-shrink: 0;
+}
+
+.search-paper-authors {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.search-paper-findings {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+  line-height: 1.4;
+}
+
+.search-paper-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.search-report-actions {
+  display: flex;
+  gap: var(--space-sm);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-default);
+  margin-top: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.search-action-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.search-action-btn:hover {
+  border-color: var(--border-active);
+  background: var(--bg-hover);
+}
+
+.search-action-btn.primary {
+  border-color: rgba(34,197,94,0.3);
+  color: #86efac;
+}
+
+.search-action-btn.primary:hover {
+  background: rgba(34,197,94,0.1);
+}

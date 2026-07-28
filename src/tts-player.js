@@ -1,19 +1,20 @@
 // Web Audio TTS player with queue management and mouth animation.
-//
-// Receives WAV bytes (Uint8Array → ArrayBuffer → AudioBuffer) from the
-// Tauri `generate_tts` Rust command and plays them back sequentially.
-// Exposes `getMouthLevel()` so the main render loop can drive the Live2D
-// mouth parameter in sync with audio.
+// Receives WAV bytes (Uint8Array → ArrayBuffer → AudioBuffer) from
+// Tauri `generate_tts` and plays them sequentially.
+// Exposes `getMouthLevel()` for Live2D mouth sync.
+// Supports mute via gain node.
 
 export class TtsPlayer {
   constructor(coreModel) {
     this.core = coreModel;
     this.ctx = null;
     this.analyser = null;
+    this.gainNode = null;
     this.source = null;
     this.queue = [];
     this.playing = false;
     this.mouthData = null;
+    this._muted = false;
   }
 
   async init() {
@@ -21,7 +22,13 @@ export class TtsPlayer {
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.3;
-    this.analyser.connect(this.ctx.destination);
+
+    this.gainNode = this.ctx.createGain();
+    this.gainNode.gain.value = this._muted ? 0 : 1;
+
+    this.analyser.connect(this.gainNode);
+    this.gainNode.connect(this.ctx.destination);
+
     this.mouthData = new Uint8Array(this.analyser.frequencyBinCount);
     if (this.ctx.state === 'suspended') {
       const resume = () => { this.ctx.resume(); };
@@ -29,6 +36,13 @@ export class TtsPlayer {
       document.addEventListener('keydown', resume, { once: true });
     }
   }
+
+  setMuted(muted) {
+    if (this.gainNode) this.gainNode.gain.value = muted ? 0 : 1;
+    this._muted = muted;
+  }
+
+  isMuted() { return this._muted; }
 
   enqueue(wavBytes) {
     if (!this.ctx) return;
@@ -39,16 +53,12 @@ export class TtsPlayer {
   stop() {
     this.queue.length = 0;
     this.playing = false;
-    try { this.source?.stop(); } catch(e) {}
+    try { this.source?.stop(); } catch (e) {}
     this.source = null;
   }
 
-  /** Whether audio is actively playing. */
-  isActive() {
-    return this.playing;
-  }
+  isActive() { return this.playing; }
 
-  /** Read current audio amplitude (0–1). Call from the render loop. */
   getMouthLevel() {
     if (!this.analyser || !this.mouthData) return 0;
     this.analyser.getByteTimeDomainData(this.mouthData);
@@ -60,13 +70,8 @@ export class TtsPlayer {
     return Math.sqrt(sum / this.mouthData.length);
   }
 
-  // ---- internals --------------------------------------------------------
-
   async _playNext() {
-    if (this.queue.length === 0) {
-      this.playing = false;
-      return;
-    }
+    if (this.queue.length === 0) { this.playing = false; return; }
     this.playing = true;
     const bytes = this.queue.shift();
 
@@ -84,29 +89,4 @@ export class TtsPlayer {
       this._playNext();
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const SENTENCE_RE = /[^.!?\n]+[.!?\n]+(?:\s|$)*/g;
-
-/** Split text into sentences, returning the portion since last call. */
-export function extractSentences(fullText, fromIdx) {
-  const tail = fullText.slice(fromIdx);
-  const matches = tail.match(SENTENCE_RE);
-  if (!matches) return [];
-  const parts = [];
-  let lastEnd = 0;
-  for (const m of matches) {
-    parts.push(m);
-    lastEnd = tail.indexOf(m) + m.length;
-  }
-  // If there's a hanging fragment at the end, don't include it yet
-  const covered = parts.join('');
-  if (tail.length > covered.length) {
-    // trailing partial sentence stays in the buffer
-  }
-  return parts.length ? parts : [];
 }

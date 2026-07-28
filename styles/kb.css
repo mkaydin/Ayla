@@ -1,0 +1,251 @@
+/* ── Knowledge Base Panel ─────────────────────────────────── */
+
+.kb-panel {
+  min-width: 600px;
+  min-height: 450px;
+}
+
+.kb-panel .panel-body {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+}
+
+#kb-tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.kb-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--space-md);
+  flex-shrink: 0;
+}
+
+.kb-tab {
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+  border-radius: 4px 4px 0 0;
+}
+
+.kb-tab:hover {
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.03);
+}
+
+.kb-tab.active {
+  color: #c4b5fd;
+  border-bottom-color: #a855f7;
+  background: rgba(168,85,247,0.08);
+}
+
+/* Graph tab */
+.kb-graph-container {
+  flex: 1;
+  position: relative;
+  border: 1px solid rgba(168,85,247,0.2);
+  border-radius: 8px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, rgba(30,20,50,0.6) 0%, rgba(16,16,32,0.85) 100%);
+  min-height: 200px;
+}
+
+.kb-graph-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.kb-graph-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.kb-graph-controls select,
+.kb-graph-controls input {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-sans);
+}
+
+.kb-graph-detail {
+  padding: var(--space-sm) 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-default);
+}
+
+.kb-graph-detail-name {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.kb-graph-actions {
+  display: flex;
+  gap: var(--space-xs);
+  padding-top: var(--space-sm);
+}
+
+/* Table tabs */
+.kb-table-toolbar {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.kb-search-input {
+  flex: 1;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.kb-search-input:focus {
+  border-color: rgba(59,130,246,0.35);
+}
+
+.kb-select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.kb-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.kb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.kb-table th {
+  text-align: left;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kb-table td {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+}
+
+.kb-table tr:hover td {
+  background: rgba(255,255,255,0.02);
+}
+
+.kb-table .kb-delete-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.kb-table .kb-delete-btn:hover {
+  border-color: rgba(239,68,68,0.3);
+  color: #fca5a5;
+}
+
+.kb-table .kb-open-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-accent);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  margin-right: var(--space-xs);
+}
+
+.kb-table .kb-open-btn:hover {
+  border-color: var(--border-active);
+}
+
+.kb-table .type-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.type-badge.Person   { background: rgba(59,130,246,0.2); color: #93c5fd; }
+.type-badge.Project  { background: rgba(34,197,94,0.2);  color: #86efac; }
+.type-badge.Tool     { background: rgba(234,179,8,0.2);  color: #fde68a; }
+.type-badge.Concept  { background: rgba(168,85,247,0.2);  color: #c4b5fd; }
+.type-badge.Document { background: rgba(236,72,153,0.2);  color: #f9a8d4; }
+.type-badge.Other    { background: rgba(255,255,255,0.05);color: var(--text-muted); }
+
+.kb-empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+}
+
+/* Confirm dialog */
+.kb-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kb-confirm-box {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--panel-radius);
+  padding: var(--space-xl);
+  max-width: 360px;
+  width: 90%;
+}
+
+.kb-confirm-text {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  margin-bottom: var(--space-lg);
+}
+
+.kb-confirm-actions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}

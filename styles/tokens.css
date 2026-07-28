@@ -1,0 +1,69 @@
+/* ───────────────────────────────────────────────────────────
+   Design Tokens — single source of truth for all visual values
+   ─────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Colors ─────────────────────────────── */
+  --bg-primary:      #161620;
+  --bg-secondary:    #1e1e2a;
+  --bg-tertiary:     #282836;
+  --bg-hover:        #323244;
+
+  --border-default:  rgba(255,255,255,0.06);
+  --border-active:   rgba(255,255,255,0.12);
+
+  --text-primary:    #d1d5db;
+  --text-secondary:  #9ca3af;
+  --text-muted:      rgba(255,255,255,0.25);
+  --text-accent:     #7fd1ff;
+
+  --accent-blue:     rgba(59,130,246,0.5);
+  --accent-green:    rgba(34,197,94,0.5);
+  --accent-red:      rgba(239,68,68,0.6);
+  --accent-yellow:   rgba(234,179,8,0.5);
+  --accent-purple:   rgba(168,85,247,0.5);
+
+  --user-bubble:     rgba(59,130,246,0.28);
+  --user-border:     rgba(59,130,246,0.18);
+  --model-bubble:    rgba(255,255,255,0.04);
+  --model-border:    rgba(255,255,255,0.06);
+
+  /* ── Spacing ─────────────────────────────── */
+  --space-xs:        4px;
+  --space-sm:        8px;
+  --space-md:        12px;
+  --space-lg:        16px;
+  --space-xl:        24px;
+
+  /* ── Typography ──────────────────────────── */
+  --font-mono:       'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans:       system-ui, -apple-system, sans-serif;
+  --font-size-xs:    11px;
+  --font-size-sm:    12px;
+  --font-size-md:    13px;
+  --font-size-lg:    14px;
+  --line-height:     1.55;
+
+  /* ── Panel ───────────────────────────────── */
+  --panel-bg:        rgba(22,22,32,0.92);
+  --panel-header-h:  32px;
+  --panel-radius:    8px;
+  --panel-shadow:    0 8px 32px rgba(0,0,0,0.45);
+  --panel-header-bg: rgba(255,255,255,0.03);
+
+  /* ── Z-Index ─────────────────────────────── */
+  --z-canvas:        0;
+  --z-panel:         100;
+  --z-panel-active:  200;
+  --z-sidebar:       300;
+  --z-tooltip:       1000;
+  --z-modal:         2000;
+
+  /* ── Transitions ─────────────────────────── */
+  --transition-fast: 0.12s ease;
+  --transition-norm: 0.2s ease;
+
+  /* ── Scrollbar ───────────────────────────── */
+  --scrollbar-width: 5px;
+  --scrollbar-thumb: rgba(255,255,255,0.08);
+}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DemonGirl Viewer",
+  "productName": "ALICE",
   "version": "0.1.0",
   "identifier": "com.demongirl.live2d-viewer",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "DemonGirl — Live2D",
+        "title": "ALICE",
         "label": "main",
         "width": 1280,
         "height": 800,

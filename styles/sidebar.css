@@ -1,0 +1,68 @@
+/* ── Sidebar ──────────────────────────────────────────────── */
+
+.panel-sidebar {
+  position: fixed;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-sidebar);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel-toggle-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  position: relative;
+}
+
+.panel-toggle-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-active);
+}
+
+.panel-toggle-btn.active {
+  border-color: var(--accent-blue);
+  background: rgba(59,130,246,0.15);
+}
+
+.panel-toggle-btn .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  background: var(--accent-blue);
+  border-radius: 50%;
+  border: 2px solid var(--bg-primary);
+}
+
+.panel-toggle-btn .tooltip {
+  position: absolute;
+  right: 44px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+}
+
+.panel-toggle-btn:hover .tooltip {
+  opacity: 1;
+}

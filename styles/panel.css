@@ -1,0 +1,196 @@
+/* ───────────────────────────────────────────────────────────
+   Panel Chrome — shared across all panels
+   ─────────────────────────────────────────────────────────── */
+
+.panel {
+  position: fixed;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 300px;
+  min-height: 200px;
+  transition: opacity var(--transition-fast);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.panel-body * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.panel-header {
+  height: var(--panel-header-h);
+  background: var(--panel-header-bg);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-sm) 0 var(--space-md);
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.panel-header:active {
+  cursor: grabbing;
+}
+
+.panel-title {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.panel-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.panel-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-primary);
+}
+
+.panel-btn.close:hover {
+  background: rgba(239,68,68,0.3);
+  color: #fca5a5;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-md);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height);
+  color: var(--text-primary);
+}
+
+/* ── Resize handle ────────────────────────── */
+
+.panel .resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  z-index: 10;
+}
+
+.panel .resize-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 8px 8px;
+  border-color: transparent transparent var(--border-active) transparent;
+}
+
+/* ── Minimized state ──────────────────────── */
+
+.panel.minimized {
+  height: var(--panel-header-h) !important;
+  overflow: hidden;
+}
+
+.panel.minimized .panel-body,
+.panel.minimized .resize-handle {
+  display: none;
+}
+
+/* ── Maximized state ──────────────────────── */
+
+.panel.maximized {
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0;
+  z-index: var(--z-panel-active);
+}
+
+/* ── Status panel (fixed, non-draggable) ──── */
+
+.panel.status-panel .panel-header {
+  cursor: default;
+}
+
+.panel.status-panel .panel-actions .close {
+  display: none;
+}
+
+/* ── Panel sidebar toolbar ────────────────── */
+
+.panel-sidebar {
+  position: fixed;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-sidebar);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel-toggle-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  position: relative;
+}
+
+.panel-toggle-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-active);
+}
+
+.panel-toggle-btn.active {
+  border-color: var(--accent-blue);
+  background: rgba(59,130,246,0.15);
+}
+
+.panel-toggle-btn .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  background: var(--accent-blue);
+  border-radius: 50%;
+  border: 2px solid var(--bg-primary);
+}
