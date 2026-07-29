@@ -24,9 +24,12 @@ for arg in "$@"; do
 done
 
 log_section() { echo -e "\n${BOLD}${CYAN}━━━ $1 ━━━${NC}"; }
-log_pass()   { ((PASS++)); ((TOTAL++)); echo -e "  ${GREEN}${CHECK_MARK}${NC} $1"; }
-log_fail()   { ((FAIL++)); ((TOTAL++)); echo -e "  ${RED}${CROSS_MARK}${NC} $1 — $2"; }
-log_skip()   { ((SKIP++)); ((TOTAL++)); echo -e "  ${YELLOW}${SKIP_MARK}${NC} $1 (skipped)"; }
+# NOTE: `((x++))` returns exit status 1 when x evaluates to 0 (i.e. the FIRST increment of a
+# counter starting at 0). Under `set -e` that terminates the whole script. Append `|| true`
+# so the counters never trip the shell (issue I6).
+log_pass()   { ((PASS++))  || true; ((TOTAL++)) || true; echo -e "  ${GREEN}${CHECK_MARK}${NC} $1"; }
+log_fail()   { ((FAIL++))  || true; ((TOTAL++)) || true; echo -e "  ${RED}${CROSS_MARK}${NC} $1 — $2"; }
+log_skip()   { ((SKIP++))  || true; ((TOTAL++)) || true; echo -e "  ${YELLOW}${SKIP_MARK}${NC} $1 (skipped)"; }
 log_info()   { echo -e "  ${CYAN}→${NC} $1"; }
 
 check_cmd() { command -v "$1" >/dev/null 2>&1; }
@@ -66,8 +69,14 @@ else
   log_fail "docker-compose.yml missing" "File was deleted"
 fi
 
-NODE_DEPS=$(cd "$SCRIPT_DIR" && npm ls --depth=0 2>/dev/null | grep -c '├──\|└──' || echo 0)
-[ "$NODE_DEPS" -gt 0 ] && log_pass "Node dependencies installed ($NODE_DEPS packages)" \
+# Count top-level deps robustly (issue I12). Prefer jq; fall back to counting
+# package.json `dependencies` keys directly (node is required for this project anyway).
+NODE_DEPS=$(cd "$SCRIPT_DIR" && {
+  npm ls --depth=0 --json 2>/dev/null | jq '.dependencies | length' 2>/dev/null \
+    || node -e 'console.log(Object.keys(require("./package.json").dependencies||{}).length)' 2>/dev/null \
+    || echo 0
+})
+[ "$NODE_DEPS" -gt 0 ] 2>/dev/null && log_pass "Node dependencies installed ($NODE_DEPS packages)" \
   || log_fail "Node dependencies missing" "Run: npm install"
 
 # ───────────────────────────────────────────────────────────
@@ -216,46 +225,48 @@ log_section "4. Rust Backend"
 cd "$SCRIPT_DIR/src-tauri"
 
 log_info "Running: cargo check (this may take some time)..."
-if cargo check --quiet 2>&1; then
-  log_pass "cargo check — no errors"
-else
+# Capture output ONCE and reuse it (issue I20 — was: cargo check ran twice, recompiling from scratch).
+CARGO_OUT="$(cargo check 2>&1 || true)"
+if printf '%s\n' "$CARGO_OUT" | grep -qE '^error' ; then
   log_fail "cargo check — compilation errors" "Fix errors shown above"
+  printf '%s\n' "$CARGO_OUT" | grep -E '^error' | head -20
+else
+  log_pass "cargo check — no errors"
 fi
 
-# Check for warnings
-WARN_COUNT=$(cargo check 2>&1 | grep -c "warning:" || echo 0)
+# Check for warnings (from the same captured output).
+WARN_COUNT="$(printf '%s\n' "$CARGO_OUT" | grep -c 'warning:' || true)"
 if [ "$WARN_COUNT" -gt 0 ]; then
   log_info "$WARN_COUNT compiler warnings (non-blocking)"
 fi
 
-# Module presence
+# Module presence (absolute paths — cwd was changed to src-tauri/ for cargo check above).
 for mod in "memory/mod.rs" "memory/config.rs" "memory/commands.rs" \
            "memory/conversation.rs" "memory/semantic.rs" "memory/graph.rs" \
            "memory/episodic.rs" "memory/embeddings.rs" "memory/extraction.rs" \
            "memory/summarizer.rs" "memory/consolidator.rs" "memory/retrieval.rs" \
            "memory/context.rs" "memory/pipeline.rs" "memory/ingestion.rs" \
-           "memory/working.rs" \
+           "memory/working.rs" "memory/document_store.rs" \
            "db/mod.rs" "db/surreal.rs" "db/qdrant.rs" \
-           "tools/mod.rs" "tools/types.rs" "tools/ocr.rs" "tools/meta_search.rs"; do
-  if [ -f "$mod" ]; then
+           "tools/mod.rs" "tools/types.rs" "tools/ocr.rs" "tools/meta_search.rs" \
+           "tools/quick_extract.rs"; do
+  if [ -f "$SCRIPT_DIR/src-tauri/src/$mod" ]; then
     : # silent pass
   else
     log_fail "Missing: $mod" "File was deleted"
   fi
 done
 
-# Check Tauri commands registered in lib.rs
-if grep -q "enrich_prompt" src/lib.rs && \
-   grep -q "process_turn" src/lib.rs && \
-   grep -q "process_message" src/lib.rs && \
-   grep -q "get_kb_data" src/lib.rs && \
-   grep -q "run_ocr" src/lib.rs && \
-   grep -q "run_search" src/lib.rs && \
-   grep -q "ingest_text" src/lib.rs && \
-   grep -q "run_consolidation" src/lib.rs && \
-   grep -q "generate_tts" src/lib.rs && \
-   grep -q "stop_tts" src/lib.rs; then
-  log_pass "11 Tauri commands registered"
+# Check Tauri commands registered in lib.rs (issue I18: hardcoded count drifted to 11
+# while only 10 were actually checked). Now derive the count from lib.rs itself.
+TAURI_CMD_COUNT="$(grep -cE 'tts::[a-z_]+|memory::commands::[a-z_]+' src/lib.rs || true)"
+TAURI_CMDS_OK=true
+for cmd in enrich_prompt process_turn process_message get_kb_data run_ocr run_search \
+           ingest_text run_consolidation generate_tts stop_tts; do
+  grep -q "$cmd" src/lib.rs || TAURI_CMDS_OK=false
+done
+if [ "$TAURI_CMDS_OK" = "true" ]; then
+  log_pass "$TAURI_CMD_COUNT Tauri commands registered"
 else
   log_fail "Tauri command registration incomplete" "Check src/lib.rs"
 fi
@@ -295,22 +306,21 @@ for css in "tokens.css" "panel.css" "scrollbar.css" "status.css" \
   [ -f "$SCRIPT_DIR/styles/$css" ] || log_fail "Missing: styles/$css" "File was deleted"
 done
 
-# JS modules
-for js in \
+# JS modules (issue I19: hardcoded "17" but 16 listed. Now compute the actual count.)
+JS_MODULES=(
   "src/lib/ipc.js" "src/lib/markdown.js" "src/lib/drag-resize.js" \
   "src/lib/events.js" "src/lib/prompts.js" "src/lib/process-notify.js" \
   "src/lib/alice-responses.js" \
   "src/ui/panel-system.js" "src/ui/status-panel.js" "src/ui/chat-panel.js" \
   "src/ui/ocr-panel.js" "src/ui/search-panel.js" "src/ui/kb-panel.js" \
   "src/ui/sidebar.js" \
-  "src/main.js" "src/tts-player.js"; do
-  if [ -f "$SCRIPT_DIR/$js" ]; then
-    : # silent
-  else
-    log_fail "Missing: $js" "File was deleted"
-  fi
+  "src/main.js" "src/tts-player.js"
+)
+JS_OK=true
+for js in "${JS_MODULES[@]}"; do
+  [ -f "$SCRIPT_DIR/$js" ] || { log_fail "Missing: $js" "File was deleted"; JS_OK=false; }
 done
-log_pass "All 17 JS modules present"
+[ "$JS_OK" = "true" ] && log_pass "All ${#JS_MODULES[@]} JS modules present"
 
 # HTML
 [ -f "$SCRIPT_DIR/index.html" ] && log_pass "index.html found" \
@@ -347,8 +357,9 @@ log_section "6. Integration Smoke Tests"
 [ -f "$SCRIPT_DIR/src-tauri/capabilities/default.json" ] && log_pass "Tauri capabilities configured" \
   || log_fail "capabilities/default.json missing"
 
-# Cargo.toml deps
-for crate in "surrealdb" "qdrant-client" "petgraph" "tokio" "reqwest" \
+# Cargo.toml deps (note: project talks to SurrealDB over HTTP via `reqwest`, so there is no
+# `surrealdb` crate — don't check for it).
+for crate in "qdrant-client" "petgraph" "tokio" "reqwest" \
              "uuid" "chrono" "async-trait" "tauri-plugin-shell"; do
   if grep -q "$crate" "$SCRIPT_DIR/src-tauri/Cargo.toml" 2>/dev/null; then
     : # silent
@@ -448,7 +459,11 @@ fi
 log_section "8. Code Quality"
 
 # Check no leftover debug statements in JS
-DEBUG_COUNT=$(grep -r "console\.\(log\|debug\)" "$SCRIPT_DIR/src" --include="*.js" 2>/dev/null | grep -v "warn\|error" | wc -l || echo 0)
+# NOTE: under `set -o pipefail`, `grep | wc -l || echo 0` is a bug — when grep finds nothing
+# it exits 1, so pipefail makes the pipeline exit 1, and `|| echo 0` appends a SECOND 0 to
+# wc's own 0, yielding "0\n0" which breaks `[ ... -gt 0 ]`. wc -l always emits a number, so
+# no fallback is needed.
+DEBUG_COUNT=$(grep -r "console\.\(log\|debug\)" "$SCRIPT_DIR/src" --include="*.js" 2>/dev/null | grep -v "warn\|error" | wc -l | tr -d ' ' || true)
 if [ "$DEBUG_COUNT" -le 5 ]; then
   log_pass "JS console.log/debug: $DEBUG_COUNT (acceptable)"
 else
@@ -456,20 +471,24 @@ else
 fi
 
 # Check for TODO comments
-TODO_COUNT=$(grep -r "TODO\|FIXME\|HACK" "$SCRIPT_DIR/src" "$SCRIPT_DIR/src-tauri/src" --include="*.js" --include="*.rs" 2>/dev/null | wc -l || echo 0)
+TODO_COUNT=$(grep -r "TODO\|FIXME\|HACK" "$SCRIPT_DIR/src" "$SCRIPT_DIR/src-tauri/src" --include="*.js" --include="*.rs" 2>/dev/null | wc -l | tr -d ' ' || true)
 if [ "$TODO_COUNT" -gt 0 ]; then
   log_info "TODOs/FIXMEs remaining: $TODO_COUNT"
 fi
 
-# Check for hardcoded secrets
-if grep -r "password\|secret\|api.key\|token" "$SCRIPT_DIR/src-tauri/src" --include="*.rs" 2>/dev/null | grep -v "root\|password\|MemoryConfig\|//" | grep -q .; then
-  log_info "Potential hardcoded secrets found — review src-tauri/src/"
+# Check for hardcoded secrets (issue I11: the previous detector's `grep -v` excluded exactly
+# the tokens being hunted, so it could never fire. Look for concrete assignments instead.)
+SECRET_HITS="$(grep -rnE '"(root|admin|password|passwd|secret|token|api_?key)"\s*[,)]' \
+  "$SCRIPT_DIR/src-tauri/src" --include="*.rs" 2>/dev/null || true)"
+if [ -n "$SECRET_HITS" ]; then
+  log_info "Potential hardcoded credentials found — review:"
+  printf '%s\n' "$SECRET_HITS" | head -10
 fi
 
 # Line counts
-RS_LINES=$(find "$SCRIPT_DIR/src-tauri/src" -name "*.rs" -exec cat {} + 2>/dev/null | wc -l)
-JS_LINES=$(find "$SCRIPT_DIR/src" -name "*.js" -exec cat {} + 2>/dev/null | wc -l)
-CSS_LINES=$(find "$SCRIPT_DIR/styles" -name "*.css" -exec cat {} + 2>/dev/null | wc -l)
+RS_LINES=$(find "$SCRIPT_DIR/src-tauri/src" -name "*.rs" -print0 2>/dev/null | xargs -0 wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+JS_LINES=$(find "$SCRIPT_DIR/src" -name "*.js" -print0 2>/dev/null | xargs -0 wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+CSS_LINES=$(find "$SCRIPT_DIR/styles" -name "*.css" -print0 2>/dev/null | xargs -0 wc -l 2>/dev/null | tail -1 | awk '{print $1}')
 log_info "Code size: $RS_LINES Rust · $JS_LINES JS · $CSS_LINES CSS"
 
 # ───────────────────────────────────────────────────────────

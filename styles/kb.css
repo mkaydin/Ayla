@@ -46,18 +46,18 @@
   background: rgba(168,85,247,0.08);
 }
 
-/* Graph tab */
+/* Graph container — basic Canvas2D */
 .kb-graph-container {
   flex: 1;
   position: relative;
-  border: 1px solid rgba(168,85,247,0.2);
+  border: 1px solid rgba(168,85,247,0.12);
   border-radius: 8px;
   overflow: hidden;
-  background: radial-gradient(ellipse at center, rgba(30,20,50,0.6) 0%, rgba(16,16,32,0.85) 100%);
+  background: #0f0d16;
   min-height: 200px;
 }
 
-.kb-graph-canvas {
+#kb-graph-canvas {
   width: 100%;
   height: 100%;
 }
@@ -248,4 +248,26 @@
   display: flex;
   gap: var(--space-sm);
   justify-content: flex-end;
+}
+
+/* Graph tooltip — Sigma.js renders its own hover, but we can use this for custom overlays */
+.kb-graph-tooltip {
+  position: absolute;
+  z-index: 500;
+  background: rgba(15, 15, 26, 0.92);
+  border: 1px solid var(--border-active);
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.15s;
+}
+
+.kb-graph-tooltip strong {
+  color: var(--text-accent);
+  display: block;
+  margin-bottom: 2px;
 }

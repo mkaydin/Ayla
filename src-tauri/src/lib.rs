@@ -16,7 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(TtsState {
-            engine: std::sync::Mutex::new(tts::TtsEngine::new()),
+            engine: std::sync::Arc::new(std::sync::Mutex::new(tts::TtsEngine::new())),
         })
         .manage(ProcessRegistry::new())
         .setup(|app| {
@@ -46,6 +46,8 @@ pub fn run() {
             memory::commands::get_kb_data,
             memory::commands::kb_add_node,
             memory::commands::kb_add_edge,
+            memory::commands::kb_delete_node,
+            memory::commands::kb_delete_edge,
             memory::commands::run_ocr,
             memory::commands::run_search,
             memory::commands::ingest_text,
@@ -53,8 +55,15 @@ pub fn run() {
             memory::commands::cancel_process,
             memory::commands::save_chat_session,
             memory::commands::load_chat_sessions,
+            memory::commands::delete_chat_session,
+            memory::commands::check_db_ready,
             memory::commands::save_file_record,
             memory::commands::get_files,
+            memory::commands::get_document_text,
+            memory::commands::delete_file_record,
+            memory::commands::delete_file_nodes,
+            memory::commands::run_quick_extract,
+            memory::commands::search_documents,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

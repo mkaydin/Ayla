@@ -6,15 +6,16 @@ use crate::memory::semantic::{Fact, SemanticStore};
 use crate::memory::graph::KnowledgeGraph;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct Consolidator {
     semantic: SemanticStore,
-    graph: KnowledgeGraph,
+    graph: Arc<Mutex<KnowledgeGraph>>,
     db: Arc<SurrealDB>,
 }
 
 impl Consolidator {
-    pub fn new(db: Arc<SurrealDB>, semantic: SemanticStore, graph: KnowledgeGraph) -> Self {
+    pub fn new(db: Arc<SurrealDB>, semantic: SemanticStore, graph: Arc<Mutex<KnowledgeGraph>>) -> Self {
         Self { db, semantic, graph }
     }
 
@@ -27,7 +28,13 @@ impl Consolidator {
         report.reinforced = self.reinforce_frequent_facts().await.unwrap_or(0);
 
         // Sync graph to DB after changes
-        let _ = self.graph.sync().await;
+        let sync_result = {
+            let mut graph = self.graph.lock().await;
+            graph.sync().await
+        };
+        if let Err(e) = sync_result {
+            log::warn!("Consolidation graph sync failed: {}", e);
+        }
 
         Ok(report)
     }

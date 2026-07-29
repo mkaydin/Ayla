@@ -1,8 +1,9 @@
 // ── Qdrant client wrapper ───────────────────────────────────
 
 use qdrant_client::qdrant::{
-    value, CreateCollectionBuilder, Distance, PointId, PointStruct, ScoredPoint,
-    SearchPointsBuilder, UpsertPointsBuilder, Value, VectorParamsBuilder,
+    value, Condition, CreateCollectionBuilder, DeletePointsBuilder, Distance, Filter,
+    PointId, PointStruct, ScoredPoint, SearchPointsBuilder, UpsertPointsBuilder, Value,
+    VectorParamsBuilder,
 };
 use qdrant_client::{Qdrant, QdrantError};
 use std::collections::HashMap;
@@ -39,7 +40,17 @@ impl QdrantDB {
     pub async fn upsert(&self, collection: &str, id: u64, vector: Vec<f32>, payload_text: &str) -> Result<(), String> {
         let mut payload = HashMap::new();
         payload.insert("text".to_string(), Value { kind: Some(value::Kind::StringValue(payload_text.to_string())) });
+        self.upsert_with_payload(collection, id, vector, payload).await
+    }
 
+    /// Upsert a point with arbitrary payload. Caller builds the payload map.
+    pub async fn upsert_with_payload(
+        &self,
+        collection: &str,
+        id: u64,
+        vector: Vec<f32>,
+        payload: HashMap<String, Value>,
+    ) -> Result<(), String> {
         let point = PointStruct {
             id: Some(PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Num(id)) }),
             vectors: Some(qdrant_client::qdrant::Vectors {
@@ -53,6 +64,20 @@ impl QdrantDB {
 
         self.client
             .upsert_points(UpsertPointsBuilder::new(collection.to_string(), vec![point]))
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Delete all points in `collection` whose `field` equals `value`.
+    pub async fn delete_by_field(&self, collection: &str, field: &str, value: &str) -> Result<(), String> {
+        let filter = Filter::must([Condition::matches(field.to_string(), value.to_string())]);
+        self.client
+            .delete_points(
+                DeletePointsBuilder::new(collection.to_string())
+                    .points(filter)
+                    .wait(true),
+            )
             .await
             .map_err(|e| e.to_string())?;
         Ok(())

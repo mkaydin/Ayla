@@ -16,10 +16,13 @@ search:
     - json
 
 server:
-  secret_key: "CHANGE_THIS_TO_RANDOM_SECRET_KEY"
-  bind_address: "0.0.0.0"
+  # `ultrasecretkey` is the canonical "unset" marker that the official SearXNG Docker
+  # image's entrypoint replaces with the $SEARXNG_SECRET environment variable (issue I2).
+  # Set SEARXNG_SECRET in your gitignored .env file (generate with: openssl rand -hex 32).
+  secret_key: "ultrasecretkey"
+  bind_address: "127.0.0.1"
   port: 8080
-  limiter: false
+  limiter: true
   image_proxy: false
 
 outgoing:

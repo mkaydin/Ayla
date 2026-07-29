@@ -33,7 +33,24 @@ impl EpisodeStore {
 
     pub async fn init_table(&self) -> Result<(), String> {
         self.db.ensure_table("episode").await?;
-        self.qdrant.ensure_collection("episodes", 1024).await
+        self.qdrant.ensure_collection("episodes", 1024).await?;
+        // Seed the in-memory point-ID counter from the highest existing episode ID so that
+        // new episodes don't overwrite existing Qdrant points after a restart (issue R4).
+        Self::seed_point_id(&self.db).await;
+        Ok(())
+    }
+
+    async fn seed_point_id(db: &Arc<SurrealDB>) {
+        if let Ok(rows) = db.query("SELECT math::max(qdrant_point_id) AS max_id FROM episode GROUP ALL;").await {
+            let max_id = rows.first()
+                .and_then(|r| r.get("max_id"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            if max_id > 0 {
+                NEXT_POINT_ID.store(max_id + 1, Ordering::SeqCst);
+                log::info!("Episode point ID counter seeded to {}", max_id + 1);
+            }
+        }
     }
 
     pub async fn store(&self, summary: &str, importance: f32, entities: &[String]) -> Result<(), String> {

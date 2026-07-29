@@ -39,3 +39,8 @@ chrono = { version = "0.4", features = ["serde"] }
 # Tool subprocess
 async-trait = "0.1"
 
+# Quick Extract: file format readers
+pdf-extract = "0.7"
+quick-xml = "0.37"
+zip = "2.2"
+

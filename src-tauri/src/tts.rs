@@ -3,7 +3,7 @@
 // The TtsEngine is created once at startup and held behind a Mutex so it can
 // be shared across Tauri command invocations safely.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
@@ -19,34 +19,29 @@ pub struct TtsEngine {
 }
 
 impl TtsEngine {
-    /// Load the Piper amy medium model.
-    pub fn new() -> Self {
+    /// Load the Piper amy model. Returns `None` (and logs a warning) if the model files
+    /// are missing, instead of panicking — so the rest of the app can still start and the
+    /// TTS command degrades to a friendly error (issue R10).
+    pub fn new() -> Option<Self> {
         // Cargo.toml lives in src-tauri/; go up one level to project root.
         let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .unwrap();
-        let model = base
-            .join("tts/tts_piper_amy_low/en_US-amy-low.onnx")
-            .to_str()
-            .unwrap()
-            .to_string();
-        let tokens = base
-            .join("tts/tts_piper_amy_low/tokens.txt")
-            .to_str()
-            .unwrap()
-            .to_string();
-        let data_dir = base
-            .join("tts/tts_piper_amy_low/espeak-ng-data")
-            .to_str()
-            .unwrap()
-            .to_string();
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let model = base.join("tts/tts_piper_amy_low/en_US-amy-low.onnx");
+        let tokens = base.join("tts/tts_piper_amy_low/tokens.txt");
+        let data_dir = base.join("tts/tts_piper_amy_low/espeak-ng-data");
+
+        if !model.exists() {
+            log::warn!("TTS model not found at {} — TTS disabled. Download per README.", model.display());
+            return None;
+        }
 
         let config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 vits: OfflineTtsVitsModelConfig {
-                    model: Some(model),
-                    tokens: Some(tokens),
-                    data_dir: Some(data_dir),
+                    model: Some(model.to_string_lossy().into_owned()),
+                    tokens: Some(tokens.to_string_lossy().into_owned()),
+                    data_dir: Some(data_dir.to_string_lossy().into_owned()),
                     noise_scale: 0.667,
                     noise_scale_w: 0.8,
                     length_scale: 1.0,
@@ -59,20 +54,27 @@ impl TtsEngine {
             ..Default::default()
         };
 
-        let tts = OfflineTts::create(&config).expect("Failed to load Piper amy TTS model");
-        log::info!("TTS loaded  sample_rate={}  speakers={}", tts.sample_rate(), tts.num_speakers());
-        TtsEngine { tts }
+        match OfflineTts::create(&config) {
+            Some(tts) => {
+                log::info!("TTS loaded  sample_rate={}  speakers={}", tts.sample_rate(), tts.num_speakers());
+                Some(TtsEngine { tts })
+            }
+            None => {
+                log::warn!("Failed to initialize Piper TTS ( OfflineTts::create returned None ) — TTS disabled.");
+                None
+            }
+        }
     }
 
     /// Synthesize text into WAV (PCM 16-bit mono) bytes.
-    pub fn generate(&self, text: &str) -> Vec<u8> {
+    pub fn generate(&self, text: &str) -> Result<Vec<u8>, String> {
         let gen = GenerationConfig { sid: 0, speed: 1.10, ..Default::default() };
 
         let audio: GeneratedAudio = self.tts
             .generate_with_config(text, &gen, None::<fn(&[f32], f32) -> bool>)
-            .expect("TTS generation failed");
+            .ok_or_else(|| "TTS generation returned no audio".to_string())?;
 
-        samples_to_wav(audio.samples(), audio.sample_rate() as u32)
+        Ok(samples_to_wav(audio.samples(), audio.sample_rate() as u32))
     }
 }
 
@@ -118,20 +120,37 @@ fn samples_to_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 pub struct TtsState {
-    pub engine: Mutex<TtsEngine>,
+    /// `None` when the model couldn't be loaded at startup (TTS disabled, app still runs).
+    /// `Arc` so a blocking synthesis thread can take its own lock without the async command
+    /// holding the Tauri State borrow (issues R11/R12).
+    pub engine: Arc<Mutex<Option<TtsEngine>>>,
 }
 
 // ---------------------------------------------------------------------------
 // Tauri command
 // ---------------------------------------------------------------------------
 
+/// Synthesize `text` to WAV bytes. Runs synthesis on a blocking thread so it doesn't stall
+/// the async Tauri runtime, and recovers from a poisoned mutex (issues R11/R12).
 #[tauri::command]
-pub fn generate_tts(state: tauri::State<'_, TtsState>, text: String) -> Vec<u8> {
-    let engine = state.engine.lock().unwrap();
-    engine.generate(&text)
+pub async fn generate_tts(state: tauri::State<'_, TtsState>, text: String) -> Result<Vec<u8>, String> {
+    let engine = Arc::clone(&state.engine);
+    // CPU-bound synthesis off the async runtime worker thread (issue R11).
+    tokio::task::spawn_blocking(move || {
+        // Recover from a poisoned mutex rather than panicking (issue R12).
+        let guard = engine.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_ref() {
+            Some(eng) => eng.generate(&text),
+            None => Err("TTS engine unavailable (model not loaded)".to_string()),
+        }
+    })
+    .await
+    .map_err(|e| format!("TTS task panicked: {}", e))?
 }
 
 #[tauri::command]
 pub fn stop_tts() -> Result<(), String> {
+    // No-op placeholder for API compatibility (issue R45). Actual playback stop is handled
+    // client-side in tts-player.js.
     Ok(())
 }

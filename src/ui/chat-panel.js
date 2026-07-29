@@ -27,6 +27,7 @@ export function initChatPanel(applyExpressionFn) {
         <div class="chat-session-list" id="chat-session-list"></div>
         <div class="chat-session-actions">
           <button class="chat-delete-btn" id="chat-delete-btn">Delete session</button>
+          <button class="ocr-action-btn approve" id="chat-to-kb-btn" title="Extract knowledge from this conversation">\uD83E\uDDE0 Send to KB</button>
         </div>
       </div>
       <div class="chat-messages-area">
@@ -43,6 +44,9 @@ export function initChatPanel(applyExpressionFn) {
   const sessions = new Map();
   let activeSession = null;
   let streaming = false;
+  // AbortController for the in-flight Ollama stream (issue H3) — allows cleanup on
+  // error, panel teardown, or window unload so the reader/connection is released.
+  let streamAbort = null;
 
   const defaultSession = {
     id: crypto.randomUUID(),
@@ -60,6 +64,7 @@ export function initChatPanel(applyExpressionFn) {
   const sessionList = document.getElementById('chat-session-list');
   const newBtn = document.getElementById('chat-new-btn');
   const deleteBtn = document.getElementById('chat-delete-btn');
+  const kbBtn = document.getElementById('chat-to-kb-btn');
 
   function renderSessions() {
     sessionList.innerHTML = '';
@@ -78,6 +83,7 @@ export function initChatPanel(applyExpressionFn) {
   function switchSession(id) {
     const s = sessions.get(id);
     if (!s) return;
+    if (activeSession && activeSession.id !== id) persistSessions();
     activeSession = s;
     renderMessages();
     renderSessions();
@@ -95,15 +101,40 @@ export function initChatPanel(applyExpressionFn) {
     activeSession = s;
     renderMessages();
     renderSessions();
+    persistSessions();
   }
 
-  function deleteSession() {
+  async function deleteSession() {
     if (sessions.size <= 1) return;
     if (!confirm('Delete "' + activeSession.title + '"?')) return;
-    sessions.delete(activeSession.id);
+    const id = activeSession.id;
+    sessions.delete(id);
     activeSession = [...sessions.values()][sessions.size - 1];
     renderMessages();
     renderSessions();
+    if (getIpc()) invoke('delete_chat_session', { sessionId: id }).catch(e => console.warn('delete session:', e));
+  }
+
+  async function sendToKb() {
+    const msgs = activeSession.messages.filter(m => m.role !== 'system');
+    if (msgs.length < 2) {
+      events.emit('status-log', { type: 'info', message: 'Not enough messages to extract knowledge.' });
+      return;
+    }
+    if (!confirm(`Extract knowledge from "${activeSession.title}" (${msgs.length} messages)?\n\nThis will analyze the conversation and add entities and relations to the knowledge base.`)) return;
+
+    // Build a combined text from all messages
+    const text = msgs.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
+    const source = activeSession.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+
+    events.emit('status-log', { type: 'info', message: 'Extracting knowledge from chat session...' });
+    try {
+      const result = await invoke('ingest_text', { text, source, sourceType: 'chat' });
+      events.emit('status-log', { type: 'success', message: 'Chat KB: ' + result });
+      events.emit('kb-refresh');
+    } catch (e) {
+      events.emit('status-log', { type: 'error', message: 'Chat KB failed: ' + e });
+    }
   }
 
   function autoTitle() {
@@ -121,7 +152,9 @@ export function initChatPanel(applyExpressionFn) {
       if (msg.role === 'system') continue;
       const div = document.createElement('div');
       div.className = 'msg ' + msg.role;
-      if (msg.role === 'model' || msg.role === 'system') {
+      // Markdown-render assistant/model/system messages (issue H2: stored role is 'assistant',
+      // which previously fell through to the textContent branch and showed raw markdown).
+      if (msg.role === 'model' || msg.role === 'assistant' || msg.role === 'system') {
         div.innerHTML = renderMarkdown(msg.content);
       } else {
         div.textContent = msg.content;
@@ -207,9 +240,11 @@ export function initChatPanel(applyExpressionFn) {
     ];
 
     try {
+      streamAbort = new AbortController();
       const r = await fetch('/api/ollama/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: streamAbort.signal,
         body: JSON.stringify({
           model: 'gemma4:e4b', messages: msgs, stream: true,
           options: { temperature: 0.7 },
@@ -324,8 +359,9 @@ export function initChatPanel(applyExpressionFn) {
         thinkDiv.textContent = '(no response)';
       }
 
-      // Store the cleaned response (without tag)
-      const finalText = displayText.trim() || thinkDiv.textContent.trim() || raw.trim();
+      // Store the cleaned response (strip any residual expression tag — issue M1).
+      const raw0Final = displayText.trim() || thinkDiv.textContent.trim() || raw.trim();
+      const finalText = stripTag(raw0Final).displayText.trim();
       addMessage('assistant', finalText);
 
       // Send remaining TTS
@@ -339,12 +375,19 @@ export function initChatPanel(applyExpressionFn) {
       }
 
     } catch (e) {
-      thinkDiv.textContent = 'Error: ' + e.message;
-      thinkDiv.style.color = '#f87171';
+      if (e.name === 'AbortError') {
+        thinkDiv.textContent = '(cancelled)';
+      } else {
+        thinkDiv.textContent = 'Error: ' + e.message;
+        thinkDiv.style.color = '#f87171';
+      }
     } finally {
+      // Release the stream reader/connection if still held (issue H3).
+      if (streamAbort) { streamAbort = null; }
       streaming = false;
       sendBtn.disabled = false;
       inputEl.focus();
+      persistSessions();
     }
   }
 
@@ -373,6 +416,7 @@ export function initChatPanel(applyExpressionFn) {
   sendBtn.addEventListener('click', sendMessage);
   newBtn.addEventListener('click', newSession);
   deleteBtn.addEventListener('click', deleteSession);
+  kbBtn.addEventListener('click', sendToKb);
 
   renderSessions();
   renderMessages();
@@ -391,37 +435,51 @@ export function initChatPanel(applyExpressionFn) {
     } catch (e) { /* ignore */ }
   }
 
-  // Restore saved sessions on init
+  // Restore saved sessions on init (retry if DB not ready)
   async function restoreSessions() {
     if (!getIpc()) return;
-    try {
-      const saved = await invoke('load_chat_sessions');
-      if (Array.isArray(saved) && saved.length > 0) {
-        sessions.clear();
-        for (const s of saved) {
-          const session = {
-            id: s.id,
-            title: s.title,
-            messages: [{ role: 'system', content: CORE_IDENTITY }, ...(s.messages || [])],
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          sessions.set(s.id, session);
+    const tryLoad = async () => {
+      try {
+        const saved = await invoke('load_chat_sessions');
+        if (Array.isArray(saved) && saved.length > 0) {
+          sessions.clear();
+          for (const s of saved) {
+            const session = {
+              id: s.id,
+              title: s.title,
+              messages: [{ role: 'system', content: CORE_IDENTITY }, ...(s.messages || [])],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            sessions.set(s.id, session);
+          }
+          activeSession = [...sessions.values()][0];
+          renderMessages();
+          renderSessions();
+          return true;
         }
-        activeSession = [...sessions.values()][0];
-        renderMessages();
-        renderSessions();
-      }
-    } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore initial failures */ }
+      return false;
+    };
+    // Try up to 10 times with 500ms delay (DB boots async)
+    for (let i = 0; i < 10; i++) {
+      try {
+        const ready = await invoke('check_db_ready');
+        if (ready) { await tryLoad(); return; }
+      } catch {}
+      await new Promise(r => setTimeout(r, 500));
+    }
   }
 
   restoreSessions();
 
-  // Persist on session switch
-  const origSwitch = switchSession;
   // Auto-save every 30 seconds
   setInterval(persistSessions, 30000);
-  window.addEventListener('beforeunload', persistSessions);
+  window.addEventListener('beforeunload', () => {
+    // Abort any in-flight stream so the fetch reader/connection is released (issue H3).
+    if (streamAbort) { try { streamAbort.abort(); } catch {} streamAbort = null; }
+    persistSessions();
+  });
 
   return panel;
 }

@@ -3,15 +3,22 @@
 
 use crate::memory::config::MemoryConfig;
 use serde_json::Value;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Summarizer {
     config: MemoryConfig,
+    client: reqwest::Client,
 }
 
 impl Summarizer {
     pub fn new(config: MemoryConfig) -> Self {
-        Self { config }
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self { config, client }
     }
 
     pub async fn summarize_turn(&self, user_msg: &str, assistant_msg: &str) -> Result<String, String> {
@@ -51,7 +58,6 @@ impl Summarizer {
     }
 
     async fn ask_llm(&self, prompt: &str) -> Result<String, String> {
-        let client = reqwest::Client::new();
         let body = serde_json::json!({
             "model": self.config.llm_model,
             "messages": [{ "role": "system", "content": "You are a precise extraction model. Output ONLY the requested value, nothing else." },
@@ -59,7 +65,7 @@ impl Summarizer {
             "stream": false,
         });
 
-        let resp = client.post(&format!("{}/api/chat", self.config.ollama_url)).json(&body).send().await
+        let resp = self.client.post(&format!("{}/api/chat", self.config.ollama_url)).json(&body).send().await
             .map_err(|e| format!("LLM: {}", e))?;
         let text = resp.text().await.map_err(|e| format!("{}", e))?;
         let json: Value = serde_json::from_str(&text).map_err(|e| format!("JSON: {}", e))?;

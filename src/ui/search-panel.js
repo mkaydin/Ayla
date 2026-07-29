@@ -103,6 +103,14 @@ export async function runSearch(query) {
   notifyProcess('start', 'search', { query });
   let searchPid = null;
 
+  // Listen for the backend's early `search-started` event so the cancel button can act
+  // while the search actually runs (issue H1 — previously searchPid was only set after
+  // the await resolved, making cancel a permanent no-op).
+  const { listen } = await import('@tauri-apps/api/event');
+  const unlistenStarted = await listen('search-started', (e) => {
+    if (e.payload?.pid) searchPid = e.payload.pid;
+  });
+
   // Cancel button
   document.getElementById('search-cancel-btn')?.addEventListener('click', async () => {
     if (searchPid) {
@@ -113,6 +121,8 @@ export async function runSearch(query) {
       backBtn.textContent = '\u2190 All searches';
       backBtn.addEventListener('click', () => renderSearchHome(panel));
       body.appendChild(backBtn);
+    } else {
+      log('Search is still starting up — try again in a moment.', 'progress');
     }
   });
 
@@ -132,13 +142,15 @@ export async function runSearch(query) {
 
       log('\u2713 Search complete', 'complete');
 
-      const papers = parsed.papers_analyzed || parsed.papers || [];
+      // C1: was `parsed.papers_analyzed` — `parsed` was never declared (ReferenceError on
+      // every real search). The backend returns the parsed meta_search JSON directly.
+      const papers = result.papers_analyzed || result.papers || [];
       const searchResult = {
         id,
         query,
         timestamp: Date.now(),
         papers,
-        synthesis: parsed.synthesis || {},
+        synthesis: result.synthesis || {},
         fullText: result,
       };
       searchResults.unshift(searchResult);
@@ -146,7 +158,7 @@ export async function runSearch(query) {
       notifyProcess('complete', 'search', {
         query,
         papers: papers.length,
-        themes: parsed.synthesis?.cross_cutting_themes?.length || 0,
+        themes: result.synthesis?.cross_cutting_themes?.length || 0,
       });
 
       renderReport(panel, searchResult);
@@ -172,6 +184,9 @@ export async function runSearch(query) {
     backBtn.textContent = '\u2190 All searches';
     backBtn.addEventListener('click', () => renderSearchHome(panel));
     body.appendChild(backBtn);
+  } finally {
+    // Always release the early-pid listener (avoid leaking handlers across searches).
+    try { unlistenStarted(); } catch {}
   }
 }
 

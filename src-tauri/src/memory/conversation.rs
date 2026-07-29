@@ -28,12 +28,13 @@ impl ConversationStore {
     }
 
     pub async fn save_turn(&self, session_id: &str, role: &str, content: &str) -> Result<(), String> {
-        // Get next turn number for this session
-        let count_sql = format!(
-            "SELECT count() FROM conversation WHERE session_id = '{}' GROUP ALL;",
-            session_id
-        );
-        let turn: u32 = match self.db.query(&count_sql).await {
+        // Get next turn number for this session (parameterized — issue R3).
+        let mut qvars = serde_json::Map::new();
+        qvars.insert("sid".into(), serde_json::Value::String(session_id.to_string()));
+        let turn: u32 = match self.db
+            .query_with_vars("SELECT count() FROM conversation WHERE session_id = $sid GROUP ALL;", qvars)
+            .await
+        {
             Ok(rows) => {
                 rows.first()
                     .and_then(|v| v.get("count").and_then(|c| c.as_u64()))
@@ -54,15 +55,16 @@ impl ConversationStore {
     }
 
     pub async fn get_session(&self, session_id: &str) -> Result<Vec<ConversationRecord>, String> {
-        let sql = format!(
-            "SELECT * FROM conversation WHERE session_id = '{}' ORDER BY turn ASC;",
-            session_id
-        );
-        self.db.query(&sql).await.and_then(|rows| {
-            rows.into_iter()
-                .map(|v| serde_json::from_value::<ConversationRecord>(v).map_err(|e| e.to_string()))
-                .collect()
-        })
+        let mut qvars = serde_json::Map::new();
+        qvars.insert("sid".into(), serde_json::Value::String(session_id.to_string()));
+        self.db
+            .query_with_vars("SELECT * FROM conversation WHERE session_id = $sid ORDER BY turn ASC;", qvars)
+            .await
+            .and_then(|rows| {
+                rows.into_iter()
+                    .map(|v| serde_json::from_value::<ConversationRecord>(v).map_err(|e| e.to_string()))
+                    .collect()
+            })
     }
 
     pub async fn get_recent_context(&self, session_id: &str, n: u32) -> Result<String, String> {

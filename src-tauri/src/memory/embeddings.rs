@@ -3,25 +3,33 @@
 
 use crate::memory::config::MemoryConfig;
 use serde_json::Value;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Embedder {
     config: MemoryConfig,
+    client: reqwest::Client,
 }
 
 impl Embedder {
     pub fn new(config: MemoryConfig) -> Self {
-        Self { config }
+        // Shared, reused HTTP client with a timeout so a hung Ollama doesn't stall the
+        // IPC forever (issues R13/R14 — was: a fresh Client::new() per call, no timeout).
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self { config, client }
     }
 
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>, String> {
-        let client = reqwest::Client::new();
         let body = serde_json::json!({
             "model": self.config.embed_model,
             "input": [text],
         });
 
-        let resp = client
+        let resp = self.client
             .post(&format!("{}/api/embed", self.config.ollama_url))
             .json(&body)
             .send()

@@ -38,6 +38,14 @@ impl ContextBuilder {
             prompt.push('\n');
         }
 
+        if !context.related_documents.is_empty() {
+            prompt.push_str("### Relevant Document Excerpts\n");
+            for (i, doc) in context.related_documents.iter().enumerate() {
+                prompt.push_str(&format!("[Doc chunk {}]: {}\n", i + 1, &doc[..doc.len().min(300)]));
+            }
+            prompt.push('\n');
+        }
+
         if !prompt.is_empty() {
             prompt.push_str("---\n\n");
         }

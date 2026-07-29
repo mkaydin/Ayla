@@ -20,7 +20,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
-
 # ONNX model files (large binaries, downloaded separately)
 models/*.onnx
 models/kws/*.onnx

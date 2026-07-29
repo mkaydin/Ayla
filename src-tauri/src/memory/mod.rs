@@ -16,6 +16,7 @@ pub mod retrieval;
 pub mod context;
 pub mod pipeline;
 pub mod ingestion;
+pub mod document_store;
 
 use config::MemoryConfig;
 use working::WorkingMemory;
@@ -31,6 +32,7 @@ use retrieval::HybridRetrieval;
 use context::ContextBuilder;
 use pipeline::MemoryPipeline;
 use ingestion::IngestionPipeline;
+use document_store::DocumentStore;
 use crate::tools::{ToolRegistry, IngestTool};
 use crate::tools::types::ToolDispatch;
 use std::sync::Arc;
@@ -42,6 +44,7 @@ pub struct MemoryManager {
     pub tool_registry: ToolRegistry,
     pub graph: Arc<Mutex<KnowledgeGraph>>,
     text_store: Arc<Mutex<HashMap<String, String>>>,
+    pub document_store: Option<Arc<DocumentStore>>,
     db_ready: bool,
     pipeline: Option<Arc<Mutex<MemoryPipeline>>>,
     ingestion: Option<Arc<Mutex<IngestionPipeline>>>,
@@ -55,13 +58,18 @@ impl MemoryManager {
         let text_store = Arc::new(Mutex::new(HashMap::new()));
 
         match Self::init_stores(&config, text_store.clone()).await {
-            Ok((graph, pipeline, ingestion, retrieval, consolidator)) => {
+            Ok((graph, pipeline, ingestion, mut retrieval, consolidator)) => {
                 log::info!("Memory system initialized with persistent storage");
+                let document_store = Self::init_document_store(&config).await.ok();
+                if let Some(ref ds) = document_store {
+                    retrieval = retrieval.with_document_store(ds.clone());
+                }
                 let manager = Self {
                     config,
                     tool_registry,
                     graph,
                     text_store,
+                    document_store,
                     db_ready: true,
                     pipeline: Some(pipeline),
                     ingestion: Some(ingestion),
@@ -78,6 +86,7 @@ impl MemoryManager {
                     tool_registry,
                     graph: Arc::new(Mutex::new(KnowledgeGraph::new())),
                     text_store,
+                    document_store: None,
                     db_ready: false,
                     pipeline: None,
                     ingestion: None,
@@ -103,7 +112,7 @@ impl MemoryManager {
 
         let surreal = SurrealDB::connect(
             &config.surrealdb_url, &config.surrealdb_ns, &config.surrealdb_db,
-            "root", "root",
+            &config.surrealdb_user, &config.surrealdb_pass,
         ).await.map_err(|e| format!("SurrealDB: {}", e))?;
         let surreal = Arc::new(surreal);
 
@@ -139,13 +148,14 @@ impl MemoryManager {
         let extractor = Extractor::new(config.clone());
         let shared_graph = Arc::new(Mutex::new(graph));
 
-        // Pipeline uses its own local graph for turn processing
+        // Pipeline uses the SHARED persisted graph (was: KnowledgeGraph::new(), which silently
+        // discarded every extracted entity/relation on restart — issue R1).
         let pipeline = MemoryPipeline::new(
             WorkingMemory::new(&uuid::Uuid::new_v4().to_string()),
             ConversationStore::new(surreal.clone()),
             EpisodeStore::new(surreal.clone(), qdrant.clone(), embedder.clone()),
             SemanticStore::new(surreal.clone()),
-            KnowledgeGraph::new(),
+            shared_graph.clone(),
             summarizer.clone(),
             extractor.clone(),
         );
@@ -162,18 +172,30 @@ impl MemoryManager {
         );
         let ingestion = Arc::new(Mutex::new(ingestion));
 
-        // Retrieval
+        // Retrieval uses the SHARED persisted graph (was: KnowledgeGraph::new() → empty
+        // related_entities, issue R2).
         let retrieval = HybridRetrieval::new(
-            KnowledgeGraph::new(),
+            shared_graph.clone(),
             semantic_store.clone(),
             EpisodeStore::new(surreal.clone(), qdrant.clone(), embedder.clone()),
             embedder,
             config.clone(),
         );
 
-        let consolidator = Arc::new(Mutex::new(Consolidator::new(surreal.clone(), semantic_store.clone(), KnowledgeGraph::new())));
+        let consolidator = Arc::new(Mutex::new(Consolidator::new(surreal.clone(), semantic_store.clone(), shared_graph.clone())));
 
         Ok((shared_graph, pipeline, ingestion, retrieval, consolidator))
+    }
+
+    async fn init_document_store(config: &MemoryConfig) -> Result<Arc<DocumentStore>, String> {
+        use crate::db::qdrant::QdrantDB;
+        let qdrant = QdrantDB::connect(&config.qdrant_url).await?;
+        let qdrant = Arc::new(qdrant);
+        let embedder = Embedder::new(config.clone());
+        let store = DocumentStore::new(qdrant, embedder);
+        store.init().await?;
+        log::info!("Document store initialized (Qdrant 'documents' collection, 1024-dim)");
+        Ok(Arc::new(store))
     }
 
     fn spawn_consolidation_loop(&self) {
@@ -261,7 +283,7 @@ impl MemoryManager {
                         let ingestion = ing.clone();
                         tokio::spawn(async move {
                             let mut i = ingestion.lock().await;
-                            let _ = i.ingest(result).await;
+                            let _ = i.ingest(result, None).await;
                         });
                     }
                     return Ok((base_prompt.to_string(), Some(status)));
@@ -275,7 +297,9 @@ impl MemoryManager {
 
     async fn try_dispatch_tool(&self, user_message: &str) -> Option<(String, String, Option<String>)> {
         let prompt = ToolRegistry::dispatch_prompt(user_message);
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build().ok()?;
         let body = serde_json::json!({
             "model": self.config.llm_model,
             "messages": [{ "role": "user", "content": prompt }],
@@ -308,7 +332,7 @@ pub async fn save_text_store(manager: &MemoryManager) {
     use crate::db::surreal::SurrealDB;
     if let Ok(db) = SurrealDB::connect(
         &manager.config.surrealdb_url, &manager.config.surrealdb_ns, &manager.config.surrealdb_db,
-        "root", "root",
+        &manager.config.surrealdb_user, &manager.config.surrealdb_pass,
     ).await {
         let _ = db.ensure_table("text_store").await;
         let _ = db.query("DELETE text_store;").await;

@@ -22,6 +22,7 @@ pub enum NodeType {
 pub struct GraphNode {
     pub name: String,
     pub node_type: NodeType,
+    pub source: String,
     pub created: String,
     pub updated: String,
 }
@@ -67,13 +68,14 @@ impl KnowledgeGraph {
             for row in rows {
                 let name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let type_str = row.get("node_type").and_then(|v| v.as_str()).unwrap_or("Other");
+                let source = row.get("source").and_then(|v| v.as_str()).unwrap_or("");
                 let nt = match type_str {
                     "Person" => NodeType::Person, "Project" => NodeType::Project,
                     "Tool" => NodeType::Tool, "Concept" => NodeType::Concept,
                     "Document" => NodeType::Document, _ => NodeType::Other,
                 };
                 if !name.is_empty() {
-                    self.upsert_node(name, nt);
+                    self.upsert_node_sourced(name, nt, source);
                 }
             }
         }
@@ -113,6 +115,7 @@ impl KnowledgeGraph {
             let record = serde_json::json!({
                 "name": node.name,
                 "node_type": format!("{:?}", node.node_type),
+                "source": node.source,
                 "updated": node.updated,
             });
             let _ = db.insert("graph_node", record).await;
@@ -138,10 +141,17 @@ impl KnowledgeGraph {
     }
 
     pub fn upsert_node(&mut self, name: &str, node_type: NodeType) -> NodeIndex {
+        self.upsert_node_sourced(name, node_type, "")
+    }
+
+    pub fn upsert_node_sourced(&mut self, name: &str, node_type: NodeType, source: &str) -> NodeIndex {
         let name = name.to_lowercase();
         if let Some(&idx) = self.name_to_idx.get(&name) {
             let node = &mut self.graph[idx];
             node.updated = chrono::Utc::now().to_rfc3339();
+            if !source.is_empty() && node.source.is_empty() {
+                node.source = source.to_string();
+            }
             self.dirty_nodes.insert(idx);
             return idx;
         }
@@ -150,6 +160,7 @@ impl KnowledgeGraph {
         let node = GraphNode {
             name: name.clone(),
             node_type,
+            source: source.to_string(),
             created: now.clone(),
             updated: now,
         };
@@ -223,6 +234,32 @@ impl KnowledgeGraph {
                 edge.confidence,
             ))
         }).collect()
+    }
+
+    pub fn remove_orphans(&mut self) -> usize {
+        let orphan_names: Vec<String> = self.name_to_idx.iter()
+            .filter(|(_, &idx)| {
+                self.graph.edges(idx).count() == 0
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        let count = orphan_names.len();
+        for name in &orphan_names {
+            self.remove_node(name);
+        }
+        count
+    }
+
+    pub fn remove_by_source(&mut self, source: &str) -> usize {
+        let names: Vec<String> = self.graph.node_weights()
+            .filter(|n| n.source == source)
+            .map(|n| n.name.clone())
+            .collect();
+        let count = names.len();
+        for name in &names {
+            self.remove_node(name);
+        }
+        count
     }
 
     pub fn remove_node(&mut self, name: &str) -> bool {

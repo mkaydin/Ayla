@@ -1,33 +1,68 @@
 services:
   surrealdb:
-    image: surrealdb/surrealdb:latest
+    image: surrealdb/surrealdb:v2.1.4
     container_name: alice-surrealdb
-    ports: ["8000:8000"]
+    ports: ["127.0.0.1:8000:8000"]
     volumes: ["./data/surrealdb:/data"]
-    command: start --log trace --user root --pass root surrealkv:/data/memory.db
+    # Compose substitutes ${SURREAL_USER}/${SURREAL_PASS} from .env at parse time and passes
+    # the resulting literals to the surreal binary (the image entrypoint is `/surreal`, NOT a
+    # shell, so `$VAR` would never be expanded inside the container — issue I1/R5).
+    command: >
+      start --log info
+      --user ${SURREAL_USER:-root}
+      --pass ${SURREAL_PASS:?SURREAL_PASS must be set in .env (see .env.example)}
+      surrealkv:/data/memory.db
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.13.2
     container_name: alice-qdrant
-    ports: ["6333:6333", "6334:6334"]
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes: ["./data/qdrant:/qdrant/storage"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6333/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   searxng:
-    image: searxng/searxng:latest
+    image: searxng/searxng:2025.7.25-bcdd42c9
     container_name: alice-searxng
-    ports: ["8888:8080"]
+    ports: ["127.0.0.1:8888:8080"]
+    environment:
+      # Generated secret from .env (gitignored) — issue I2. Quoted because the error-message
+      # text contains "with: openssl" (a colon-space) that would otherwise break YAML parsing.
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?SEARXNG_SECRET must be set in .env (generate with: openssl rand -hex 32)}"
     volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/settings.yml:/etc/searxng/settings.yml
       - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
-      - ./data/searxng:/etc/searxng
+      - ./data/searxng:/etc/searxng/data
     restart: unless-stopped
     cap_drop: [ALL]
     cap_add: [CHOWN, SETGID, SETUID]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   lightpanda:
     image: lightpanda/browser:latest
     container_name: alice-lightpanda
-    ports: ["9222:9222"]
+    ports: ["127.0.0.1:9222:9222"]
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }

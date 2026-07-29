@@ -9,13 +9,15 @@ use crate::memory::graph::{KnowledgeGraph, NodeType};
 use crate::memory::summarizer::Summarizer;
 use crate::memory::extraction::Extractor;
 use crate::memory::working::WorkingMemory;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct MemoryPipeline {
     pub working: WorkingMemory,
     conversation: ConversationStore,
     episode: EpisodeStore,
     semantic: SemanticStore,
-    graph: KnowledgeGraph,
+    graph: Arc<Mutex<KnowledgeGraph>>,
     summarizer: Summarizer,
     extractor: Extractor,
 }
@@ -26,7 +28,7 @@ impl MemoryPipeline {
         conversation: ConversationStore,
         episode: EpisodeStore,
         semantic: SemanticStore,
-        graph: KnowledgeGraph,
+        graph: Arc<Mutex<KnowledgeGraph>>,
         summarizer: Summarizer,
         extractor: Extractor,
     ) -> Self {
@@ -49,42 +51,47 @@ impl MemoryPipeline {
         // Step 2: Summarize
         let summary = self.summarizer.summarize_turn(user_msg, assistant_msg).await.unwrap_or_default();
 
-        // Step 3: Extract entities → graph
-        if let Ok(entities) = self.extractor.extract_entities(&combined).await {
-            for entity in &entities {
-                self.graph.upsert_node(entity, NodeType::Concept);
-            }
-        }
+        // Steps 3-7 operate on the shared, persisted graph.
+        {
+            let mut graph = self.graph.lock().await;
 
-        // Step 4: Extract facts → semantic
-        if let Ok(facts) = self.extractor.extract_facts(&combined).await {
-            for (subj, pred, obj, conf) in facts {
-                let _ = self.semantic.upsert_fact(&subj, &pred, &obj, conf).await;
+            // Step 3: Extract entities → graph
+            if let Ok(entities) = self.extractor.extract_entities(&combined).await {
+                for entity in &entities {
+                    graph.upsert_node(entity, NodeType::Concept);
+                }
             }
-        }
 
-        // Step 5: Extract relations → graph edges
-        if let Ok(relations) = self.extractor.extract_relations(&combined).await {
-            for (from, rel, to) in relations {
-                let fi = self.graph.upsert_node(&from, NodeType::Concept);
-                let ti = self.graph.upsert_node(&to, NodeType::Concept);
-                self.graph.upsert_edge(fi, ti, &rel, 0.8);
+            // Step 4: Extract facts → semantic
+            if let Ok(facts) = self.extractor.extract_facts(&combined).await {
+                for (subj, pred, obj, conf) in facts {
+                    let _ = self.semantic.upsert_fact(&subj, &pred, &obj, conf).await;
+                }
             }
-        }
 
-        // Step 6: Score importance → episodic memory if significant
-        if let Ok(importance) = self.summarizer.score_importance(user_msg, assistant_msg).await {
-            if importance > 0.4 && !summary.is_empty() {
-                let entities: Vec<String> = self.graph.all_nodes().iter()
-                    .take(5)
-                    .map(|n| n.name.clone())
-                    .collect();
-                let _ = self.episode.store(&summary, importance, &entities).await;
+            // Step 5: Extract relations → graph edges
+            if let Ok(relations) = self.extractor.extract_relations(&combined).await {
+                for (from, rel, to) in relations {
+                    let fi = graph.upsert_node(&from, NodeType::Concept);
+                    let ti = graph.upsert_node(&to, NodeType::Concept);
+                    graph.upsert_edge(fi, ti, &rel, 0.8);
+                }
             }
-        }
 
-        // Step 7: Sync graph to SurrealDB
-        let _ = self.graph.sync().await;
+            // Step 6: Score importance → episodic memory if significant
+            if let Ok(importance) = self.summarizer.score_importance(user_msg, assistant_msg).await {
+                if importance > 0.4 && !summary.is_empty() {
+                    let entities: Vec<String> = graph.all_nodes().iter()
+                        .take(5)
+                        .map(|n| n.name.clone())
+                        .collect();
+                    let _ = self.episode.store(&summary, importance, &entities).await;
+                }
+            }
+
+            // Step 7: Sync graph to SurrealDB
+            let _ = graph.sync().await;
+        }
 
         Ok(())
     }
@@ -96,6 +103,7 @@ impl MemoryPipeline {
             .collect();
         let _ = self.summarizer.summarize_session(&messages).await;
         self.working.clear();
-        self.graph.sync().await
+        let mut graph = self.graph.lock().await;
+        graph.sync().await
     }
 }

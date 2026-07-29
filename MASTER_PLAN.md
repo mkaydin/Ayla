@@ -23,7 +23,7 @@
 │  │  tts.rs                      │                                   │ │
 │  │  memory/  (mod, pipeline, graph, embeddings, extraction, ...)    │ │
 │  │  db/      (surreal.rs, qdrant.rs)                               │ │
-│  │  tools/   (ocr.rs, meta_search.rs — subprocess wrappers)        │ │
+│  │  tools/   (ocr.rs, meta_search.rs, quick_extract.rs)        │ │
 │  └──────────────────────────────┼───────────────────────────────────┘ │
 └─────────────────────────────────┼────────────────────────────────────┘
                                   │
@@ -131,6 +131,11 @@ chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
 which = "7"
 
+# Quick Extract: file format readers
+pdf-extract = "0.7"
+quick-xml = "0.37"
+zip = "2.2"
+
 # PDF opening
 tauri-plugin-shell = "2"
 ```
@@ -159,6 +164,7 @@ src-tauri/src/
 │   ├── retrieval.rs        # Hybrid retrieval (graph + semantic + vector)
 │   ├── context.rs          # ContextBuilder: merge → rank → prompt
 │   ├── pipeline.rs         # End-to-end pipeline
+│   └── document_store.rs    # Qdrant-backed document chunk storage (Quick Extract)
 │   └── ingestion.rs        # Tool results → memory pipeline bridge
 │
 ├── db/
@@ -169,6 +175,7 @@ src-tauri/src/
 └── tools/
     ├── mod.rs              # ToolRegistry + IngestTool trait + dispatch
     ├── types.rs            # IngestionResult, Fact, Relation, SourceInfo, ToolDispatch
+    └── quick_extract.rs    # QuickExtractTool: fast file readers + chunking
     ├── ocr.rs              # OcrTool: ocr-helper subprocess wrapper
     └── meta_search.rs      # MetaSearchTool: meta_search subprocess wrapper
 ```
@@ -214,8 +221,13 @@ User Query
     ├──► Extract entities from query
     │       └──► Graph neighbors (Petgraph BFS) → related entities
     │
+    ├──► Search ingested documents (Quick Extract)
+    │       └──► Qdrant `documents` collection → top 3 chunks >0.4 score
+    │
     └──► Merge + deduplicate + rank → inject into system prompt
 ```
+
+RetrievedContext fields: `related_facts`, `related_entities`, `related_episodes`, `related_documents`.
 
 ## 2.7 — Core Rust Structures
 
@@ -269,6 +281,17 @@ struct GraphEdge {
 | `process_message` | JS → Rust | Before each chat turn | `{system_prompt, tool_status}` |
 | `generate_tts` | JS → Rust | During streaming | WAV bytes |
 | `stop_tts` | JS → Rust | TTS toggle off | () |
+| `run_ocr` | JS → Rust | User uploads PDF | `{text, pages, pid}` |
+| `run_quick_extract` | JS → Rust | User drops file | `{text, chars, chunks, filename}` |
+| `run_search` | JS → Rust | User searches | `{summary, papers, pid}` |
+| `ingest_text` | JS → Rust | Approve extraction | Summary message |
+| `save_file_record` | JS → Rust | Before ingest | () |
+| `get_files` | JS → Rust | KB files tab | `[{name, path, size, text, ...}]` |
+| `search_documents` | JS → Rust | Semantic doc search | `[{text, score}]` |
+| `get_kb_data` | JS → Rust | KB panel open | `{nodes, edges, files}` |
+| `kb_add_node/edge` | JS → Rust | Manual KB add | () |
+| `kb_delete_node/edge` | JS → Rust | KB delete | () |
+| `delete_file_record` | JS → Rust | Remove file from KB | (msg) |
 
 ### Tauri IPC Flow
 
@@ -307,10 +330,17 @@ After response: invoke('process_turn', { userMsg, assistantMsg })
 - Query enrichment → SearXNG (8 engines) → PDF download + JS render → text extraction → gemma4:e4b paper analysis → synthesis
 - Subprocess wrapper: `tools/meta_search.rs`
 
+**Quick Extract** (built-in, no external binary)
+- File readers: `.txt`, `.md`, `.json`, `.docx` (ZIP+XML), `.pdf` (text layer via pdf-extract)
+- Text chunking (1500 chars/chunk) → qwen3-embedding:0.6b → Qdrant `documents` collection
+- Used by Document Processor panel's "Quick Extract" tab
+- Rust tool: `tools/quick_extract.rs`, store: `memory/document_store.rs`
+
 ## 3.2 — Tool Dispatch (LLM decides)
 
 ```
 User: "analyze this PDF at ~/paper.pdf"  → dispatch: ocr
+User: "read README.md"                    → dispatch: quick_extract
 User: "search papers on attention"        → dispatch: search
 User: "hello"                             → dispatch: none
 ```

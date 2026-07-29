@@ -3,6 +3,7 @@
 pub mod types;
 pub mod ocr;
 pub mod meta_search;
+pub mod quick_extract;
 
 use types::IngestionResult;
 
@@ -23,6 +24,7 @@ impl ToolRegistry {
         let mut registry = Self { tools: vec![] };
         registry.register(Box::new(ocr::OcrTool::new()));
         registry.register(Box::new(meta_search::MetaSearchTool::new()));
+        registry.register(Box::new(quick_extract::QuickExtractTool::new()));
         registry
     }
 
