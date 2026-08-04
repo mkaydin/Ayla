@@ -20,6 +20,31 @@ export default defineConfig({
         target: 'http://localhost:11434',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ollama/, '')
+      },
+      '/api/services/ollama': {
+        target: 'http://127.0.0.1:11434',
+        changeOrigin: true,
+        rewrite: () => '/api/tags'
+      },
+      '/api/services/surrealdb': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        rewrite: () => '/health'
+      },
+      '/api/services/qdrant': {
+        target: 'http://127.0.0.1:6333',
+        changeOrigin: true,
+        rewrite: () => '/'
+      },
+      '/api/services/searxng': {
+        target: 'http://127.0.0.1:8888',
+        changeOrigin: true,
+        rewrite: () => '/search?q=test&format=json'
+      },
+      '/api/services/lightpanda': {
+        target: 'http://127.0.0.1:9222',
+        changeOrigin: true,
+        rewrite: () => '/json/version'
       }
     }
   },

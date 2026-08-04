@@ -4,6 +4,10 @@ node_modules/
 # Build output
 dist/
 src-tauri/target/
+crates/*/target/
+crates/*/Cargo.lock
+release/electron/
+.electron-resources/
 
 # Rust build artifacts
 *.rs.bk

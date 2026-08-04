@@ -442,31 +442,31 @@ MINIMIZED STATE:
 │  Type: Person  ·  Created: 2026-07-20                    │
 │  Relations: PREFERS→Rust, WORKS_ON→Voice Assistant, ... │
 │  ─────────────────────────────────────────────────────   │
-│  [➕ Add Node]  [🔗 Add Edge]  [🗑 Remove Selected]     │
+│  Graph data is managed by approved document ingestion.   │
 │                                                          │
 │  ── Tab: Nodes ───────────────────────────────────────  │
 │                                                          │
 │  ╔══════════════════════════════════════════════════╗    │
 │  ║  🔍 Search nodes...                    [Type ▾] ║    │
 │  ╠══════════╤═════════╤══════════╤══════╤══════════╣    │
-│  ║ Name     │ Type    │ Edges    │ Created │ Actions ║    │
-│  ╠══════════╪═════════╪══════════╪══════╪══════════╣    │
-│  ║ User     │ Person  │ 12       │ 7/20   │ [✗]     ║    │
-│  ║ Rust     │ Concept │ 5        │ 7/18   │ [✗]     ║    │
-│  ║ Sherpa   │ Tool    │ 8        │ 7/15   │ [✗]     ║    │
-│  ║ Whisper  │ Tool    │ 3        │ 7/12   │ [✗]     ║    │
-│  ║ paper.pdf│ Doc     │ 1        │ 7/25   │ [✗]     ║    │
+│  ║ Name     │ Type    │ Edges    │ Created          ║    │
+│  ╠══════════╪═════════╪══════════╪══════════════════╣    │
+│  ║ User     │ Person  │ 12       │ 7/20             ║    │
+│  ║ Rust     │ Concept │ 5        │ 7/18             ║    │
+│  ║ Sherpa   │ Tool    │ 8        │ 7/15             ║    │
+│  ║ Whisper  │ Tool    │ 3        │ 7/12             ║    │
+│  ║ paper.pdf│ Doc     │ 1        │ 7/25             ║    │
 │  ╚══════════╧═════════╧══════════╧══════╧══════════╝    │
 │                                                          │
 │  ── Tab: Edges ───────────────────────────────────────  │
 │                                                          │
 │  ╔══════════════════════════════════════════════════╗    │
-│  ║ From      │ Relation   │ To        │ Conf   │ ✗  ║    │
-│  ╠═══════════╪════════════╪═══════════╪════════╪════╣    │
-│  ║ User      │ PREFERS    │ Rust      │ 0.95   │ ✗  ║    │
-│  ║ User      │ WORKS_ON   │ Voice Asst│ 0.90   │ ✗  ║    │
-│  ║ Sherpa    │ SUPPORTS   │ Whisper   │ 0.85   │ ✗  ║    │
-│  ╚═══════════╧════════════╧═══════════╧════════╧════╝    │
+│  ║ From      │ Relation   │ To        │ Confidence   ║    │
+│  ╠═══════════╪════════════╪═══════════╪══════════════╣    │
+│  ║ User      │ PREFERS    │ Rust      │ 0.95         ║    │
+│  ║ User      │ WORKS_ON   │ Voice Asst│ 0.90         ║    │
+│  ║ Sherpa    │ SUPPORTS   │ Whisper   │ 0.85         ║    │
+│  ╚═══════════╧════════════╧═══════════╧══════════════╝    │
 │                                                          │
 │  ── Tab: Files ───────────────────────────────────────  │
 │                                                          │
@@ -495,19 +495,19 @@ MINIMIZED STATE:
   - Zoom slider
   - Type filter dropdown (show only certain node types)
   - Depth slider (how many hops from selected node to show)
-  - +Add Node / +Add Edge / Remove buttons
+  - No manual graph mutation; approved ingestion owns nodes and edges
 
 **B. Nodes Tab (Table view)**
 - Searchable/filterable table of all graph nodes
-- Columns: Name, Type, Edge Count, Created Date, Actions
+- Columns: Name, Type, Edge Count, Created Date
 - Type filter dropdown
 - Click row → select node, jump to Graph tab
-- Delete button per row with confirmation
+- Read-only
 
 **C. Edges Tab (Table view)**
 - Table of all relationships
-- Columns: From, Relation, To, Confidence, Actions
-- Delete button per row with confirmation
+- Columns: From, Relation, To, Confidence
+- Read-only
 
 **D. Files Tab (Table view)**
 - Lists all ingested files (PDFs, markdown, images)

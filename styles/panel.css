@@ -16,6 +16,12 @@
   transition: opacity var(--transition-fast);
   user-select: none;
   -webkit-user-select: none;
+  contain: layout paint style;
+}
+
+.panel.active {
+  border-color: rgba(167,139,250,0.24);
+  box-shadow: var(--panel-shadow), 0 0 0 1px rgba(139,92,246,0.05);
 }
 
 .panel-body * {
@@ -46,6 +52,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 600;
+  letter-spacing: 0.025em;
 }
 
 .panel-actions {
@@ -88,6 +96,22 @@
   color: var(--text-primary);
 }
 
+/* KaTeX is used by every Markdown surface (chat, search, OCR, and KB). Keep
+   wide display equations readable without forcing their enclosing panel wider. */
+.panel-body .katex-display,
+.msg .katex-display {
+  max-width: 100%;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15em 0;
+}
+
+.panel-body .katex,
+.msg .katex {
+  font-size: 1em;
+}
+
 /* ── Resize handle ────────────────────────── */
 
 .panel .resize-handle {
@@ -117,6 +141,19 @@
 .panel.minimized {
   height: var(--panel-header-h) !important;
   overflow: hidden;
+  contain: layout paint style;
+}
+
+.panel.is-dragging {
+  user-select: none;
+  will-change: transform;
+  box-shadow: none;
+}
+
+.panel.is-resizing {
+  user-select: none;
+  will-change: width, height;
+  box-shadow: none;
 }
 
 .panel.minimized .panel-body,
@@ -132,6 +169,9 @@
   width: 100vw !important;
   height: 100vh !important;
   border-radius: 0;
+  border-color: transparent;
+  background: #11101a;
+  box-shadow: none;
   z-index: var(--z-panel-active);
 }
 

@@ -1,8 +1,8 @@
 # ALICE — Local AI Assistant with Knowledge Memory
 
-A fully offline desktop AI assistant featuring an interactive **Live2D "Demon Girl" avatar** named Alice. Type messages, and the avatar responds with synthesized speech while animating facial expressions, lip sync, blinking, and head tracking. Alice remembers everything — conversations, documents, research — in a persistent knowledge graph.
+A local-first desktop AI assistant featuring an interactive **Live2D "Demon Girl" avatar** named Alice. Type messages, and the avatar responds with synthesized speech while animating facial expressions, lip sync, blinking, and head tracking. Alice remembers conversations, documents, and research in a persistent knowledge graph.
 
-Everything runs locally — no cloud services required. Built with Tauri 2, Rust, vanilla JavaScript, PixiJS, and ONNX models.
+AI inference and memory run locally. Literature search and the current Live2D Cubism bootstrap require network access. During the production migration, both Tauri and Electron/Chromium use the same Tauri-free Rust core. Electron communicates with it through a private MessagePack sidecar and is the intended production desktop target after parity testing.
 
 ## Features
 
@@ -17,32 +17,35 @@ Everything runs locally — no cloud services required. Built with Tauri 2, Rust
 - **Literature search** — meta-search across Google Scholar, arXiv, PubMed, Semantic Scholar, and more
 - **Service health dashboard** — live status of Ollama, SurrealDB, Qdrant, SearXNG, Lightpanda, TTS, embedding model
 - **System doctor** — `doctor.sh` script for automated health checks across all services
-- **Fully offline** — all models and services run locally in Docker containers
+- **Local AI stack** — chat, embeddings, speech, and memory stay on the machine
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     Tauri 2 Desktop App                       │
-│                                                              │
-│  ┌─ JS Frontend ───────────────────────────────────────────┐ │
+│                 Shared Vite/PixiJS Frontend                  │
+│  ┌─────────────────────────────────────────────────────────┐ │
 │  │  panel-system   chat-panel    ocr-panel   search-panel  │ │
 │  │  kb-panel       status-panel  sidebar                   │ │
-│  └──────────────────────┬──────────────────────────────────┘ │
-│                         │ Tauri IPC (12 commands)             │
-│  ┌─ Rust Backend ──────┼───────────────────────────────────┐ │
-│  │  tts.rs             │                                   │ │
-│  │  memory/  (mod, pipeline, graph, embeddings, extraction,│ │
-│  │            summarizer, consolidator, retrieval, context,│ │
-│  │            ingestion, working, conversation, episodic,  │ │
-│  │            semantic)                                    │ │
-│  │  db/      (surreal.rs, qdrant.rs)                      │ │
-│  │  tools/   (ocr.rs, meta_search.rs)                     │ │
-│  └──────────────────────┼───────────────────────────────────┘ │
-└─────────────────────────┼────────────────────────────────────┘
-                          │
-    ┌─────────────────────┼─────────────────────┐
-    │                     │                     │
+│  └──────────────────┬──────────────────────┬───────────────┘ │
+└─────────────────────┼──────────────────────┼─────────────────┘
+                      │                      │
+              ┌───────▼────────┐    ┌────────▼─────────┐
+              │ Tauri WebView  │    │ Electron/Chromium│
+              │ thin adapters  │    │ secure preload   │
+              └───────┬────────┘    └────────┬─────────┘
+                      │                      │ private framed
+                      │                      │ MessagePack IPC
+                      │             ┌────────▼─────────┐
+                      │             │ Rust sidecar     │
+                      │             │ alice-sidecar    │
+                      │             └────────┬─────────┘
+              ┌───────▼──────────────────────▼─────────┐
+              │ alice-core: memory / DB / tools / TTS  │
+              └──────────────────┬─────────────────────┘
+                                 │
+    ┌────────────────────────────┼─────────────────────┐
+    │                            │                     │
 ┌───▼──────┐  ┌───────────▼──────┐  ┌──────────▼──────────┐
 │ SurrealDB│  │     Qdrant       │  │  Ollama :11434      │
 │  :8000   │  │   :6333/6334     │  │  gemma4:e4b (chat)  │
@@ -59,7 +62,7 @@ Everything runs locally — no cloud services required. Built with Tauri 2, Rust
 
 | Layer | Technology |
 |---|---|
-| Desktop framework | Tauri 2 (Rust + WebView) |
+| Desktop framework | Electron 41/Chromium migration target + temporary Tauri 2 reference host |
 | Frontend | Vanilla JS (ES modules), Vite 5 |
 | 2D rendering | PixiJS 6 + pixi-live2d-display (Cubism 4) |
 | LLM backend | Ollama (`gemma4:e4b`) |
@@ -92,6 +95,10 @@ npm install
 
 # 3. Pull Ollama models
 ollama pull gemma4:e4b
+
+# Optional: use a different Ollama model for chat, extraction, summarization,
+# graph cleanup, and Meta Search. Leave ALICE_LLM_MODEL unset for Gemma.
+# ALICE_LLM_MODEL=nemotron-3-super:cloud
 ollama pull qwen3-embedding:0.6b
 ollama pull deepseek-ocr       # optional — for PDF OCR
 
@@ -104,7 +111,9 @@ curl -L -o /tmp/espeak-ng-data.tar.bz2 \
 tar -xjf /tmp/amy-low.tar.bz2 -C tts/tts_piper_amy_low/ --strip-components=1
 tar -xjf /tmp/espeak-ng-data.tar.bz2 -C tts/tts_piper_amy_low/
 
-# 5. Start Docker services
+# 5. Create local credentials, then start Docker services
+cp .env.example .env
+# Replace both placeholder secrets in .env (generate each with: openssl rand -hex 32)
 docker compose up -d
 # → SurrealDB :8000, Qdrant :6333/6334, SearXNG :8888, Lightpanda :9222
 
@@ -115,9 +124,38 @@ bash doctor.sh
 (cd ../ocr_helper_system && cargo build --release)
 (cd ../meta_search_Js_render && cargo build --release)
 
-# 8. Run
+# 8a. Run the Tauri reference application
 npm run tauri dev
+
+# 8b. Run Electron/Chromium with the Rust sidecar
+npm run electron:dev
 ```
+
+## Desktop Targets
+
+Both desktop targets use the same `index.html`, Vite bundle, panel UI, PixiJS renderer, Live2D model, and `alice-core` business implementation. Tauri remains available as the reference host while Electron parity and packaging are completed:
+
+```bash
+npm run tauri dev          # Reference host + shared Rust core
+npm run electron:dev       # Build sidecar, start Vite, and run Chromium
+npm run electron:start     # Build sidecar and run against an existing dist/
+npm run sidecar:diagnostic # Headless Electron-main ↔ Rust protocol diagnostic
+npm run sidecar:diagnostic:live # Read-only smoke test against local services/data
+npm run sidecar:diagnostic:mutations # Reversible SurrealDB write/read/delete test
+npm run sidecar:diagnostic:features # Reversible live chat/TTS/search-cancel/KB test
+npm run sidecar:diagnostic:ocr # Real OCR test using ALICE_OCR_FIXTURE or smallest downloaded PDF
+npm run electron:stage     # Validate and stage sidecar + OCR/search helpers
+npm run electron:pack      # Unpacked Electron application
+npm run electron:build     # Linux AppImage + deb in release/electron/
+```
+
+The Electron target uses a sandboxed preload, context isolation, blocked Node.js access in the page, external-link isolation, and a loopback production server. Electron main owns `alice-sidecar`, validates its versioned handshake and command allowlist, and transports requests, progress events, chat streams, structured errors, and binary WAV data over private stdin/stdout pipes.
+
+All 29 Rust commands have sidecar dispatcher routes. The Electron package
+contains the Rust sidecar, OCR helper, Meta Search helper, and Piper resources;
+the staging command fails with an actionable error if any required executable
+is missing. Full Ollama/OCR/search workflow parity remains part of the
+production cutover gates in `ELECTRON_RUST_MIGRATION_PLAN.md`.
 
 ## Project Structure
 
@@ -127,6 +165,8 @@ npm run tauri dev
 ├── doctor.sh                      # Automated system health checker
 ├── vite.config.js                 # Vite config (Ollama API proxy)
 ├── package.json                   # JS dependencies
+├── electron-builder.yml           # Electron Linux packaging
+├── electron/                      # Chromium main/preload/dev/static-server target
 ├── MASTER_PLAN.md                 # Full architecture & implementation plan
 ├── TEST_PLAN.md                   # Manual test matrix & performance benchmarks
 │
@@ -226,15 +266,32 @@ npm run tauri dev
 | `enrich_prompt` | JS → Rust | Inject memory context into system prompt before LLM call |
 | `process_turn` | JS → Rust | Run memory pipeline after assistant response |
 | `process_message` | JS → Rust | Combined: tool dispatch + prompt enrichment |
+| `stream_chat` | JS ↔ Rust | Stream Ollama chat without a development proxy |
 | `get_kb_data` | JS → Rust | Retrieve all knowledge graph nodes and edges |
-| `kb_add_node` | JS → Rust | Add a node to the knowledge graph |
-| `kb_add_edge` | JS → Rust | Add an edge between two graph nodes |
+| `analyze_and_merge_kb` | JS → Rust | LLM entity resolution, transactional node merge, and edge rewiring |
 | `run_ocr` | JS → Rust | Execute OCR on a PDF file |
-| `run_search` | JS → Rust | Execute meta-search on a topic |
+| `run_search` | JS → Rust | Execute knowledge-document or scientific-paper gathering |
+| `get_search_history` | JS → Rust | Load persistent topics, reports, and document processing state |
+| `get_search_document_content` | JS → Rust | Lazily load a stored Quick Extract/OCR result |
+| `save_search_document_result` | JS → Rust | Persist processed document text and metadata in SurrealDB |
 | `ingest_text` | JS → Rust | Feed arbitrary text into the memory pipeline |
 | `run_consolidation` | JS → Rust | Manually trigger memory consolidation |
 | `generate_tts` | JS → Rust | Generate speech audio from text |
 | `stop_tts` | JS → Rust | Stop in-progress TTS playback |
+
+Knowledge graph nodes and edges are read-only in the UI. The Graph tab packs
+document provenance groups and unowned relation components into separate,
+non-overlapping clusters. **AI Analyze & Improve** inspects all nodes and
+relations, merges only ≥0.90-confidence duplicate identities, clarifies unclear
+node names and meanings, and normalizes relation labels without changing their
+direction or claims. Sources are preserved while affected edges are rewired and
+deduplicated. Analysis is incremental: completed node meanings are skipped,
+safe relation formatting happens locally, duplicate checks use candidate groups,
+and resumable batches run two-at-a-time for Ollama cloud models (one-at-a-time
+for local models). Selecting a node highlights its neighbours and animates its
+direct relations. Deleting an approved document from the
+Files tab removes its vectors and only that document's node/edge provenance;
+shared merged knowledge remains until its final source is deleted.
 
 ## Memory Layers
 
@@ -279,7 +336,26 @@ User message → Assistant response
 | `qwen3-embedding:0.6b` | 639 MB | Embedding generation (1024-dim vectors) |
 | `deepseek-ocr` | ~6.7 GB | PDF page OCR (optional) |
 
+`ALICE_OLLAMA_NUM_CTX` sets the hardware-safe maximum context (32,768 by
+default for an 8 GB GPU). Each Gemma request automatically selects an 8K, 16K,
+or 32K context from its serialized input size, output allowance, and safety
+headroom. The model's advertised 131K maximum should not be used by default
+because its KV cache can exhaust VRAM. Knowledge extraction processes documents
+in bounded chunks, uses schema-constrained typed entities and relations,
+performs an adaptive relation-completion pass, then merges and deduplicates the
+results. If Ollama still reports a CUDA out-of-memory error, extraction retries
+once at 16,384.
+
 ## Configuration
+
+### Render performance
+
+Pixi and the KB canvas automatically choose a framebuffer resolution from the
+window size and a pixel budget instead of rendering every fullscreen pixel at
+the display's full device-pixel ratio. The System Status panel shows live FPS,
+resolution, and megapixels; its **Render** button cycles between Auto, Quality,
+and Performance. Live window resize temporarily uses a lower resolution and
+30 FPS, then restores the selected quality and a 60 FPS cap after resizing.
 
 ### Chat model
 
@@ -332,8 +408,15 @@ Alice is a demoness bound to her master's service — serious, obedient, and pre
 | System Status | (fixed top-left) | 7-service health dashboard, log feed, TTS/Blink/Look toggles |
 | Chat | Ctrl+C | Markdown chat with session sidebar (new/delete/switch) |
 | OCR | Ctrl+O | PDF upload → extraction → preview → approve to KB |
-| Meta Search | Ctrl+S | Progress log → synthesis report → PDF list → approve |
+| Meta Search | Ctrl+S | Knowledge-document or scientific-PDF gathering → Quick Extract/OCR → KB |
 | Knowledge Base | Ctrl+K | Canvas force graph + nodes/edges/files tables + CRUD |
+
+Knowledge-document mode uses the app's native SearXNG general search, bounded
+public-page text gathering, and automatic-context Ollama writer. If public
+general engines are temporarily suspended, it retains SearXNG infobox evidence
+and supplements it with science-category results without downloading papers.
+Scientific-PDF mode uses the external `meta_search` binary and inventories its
+download directory in SurrealDB.
 
 All panels are draggable, resizable, minimizable, and persist position across restarts.
 

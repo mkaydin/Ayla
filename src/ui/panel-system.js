@@ -193,6 +193,8 @@ class Panel {
 
   focus() {
     if (!this.el || this.fixed) return;
+    document.querySelectorAll('.panel.active').forEach(el => el.classList.remove('active'));
+    this.el.classList.add('active');
     this.zIndex = ++zCounter;
     this.el.style.zIndex = this.zIndex;
   }

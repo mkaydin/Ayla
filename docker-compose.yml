@@ -14,7 +14,8 @@ services:
       surrealkv:/data/memory.db
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      # The image exposes the CLI at /surreal and does not include wget.
+      test: ["CMD", "/surreal", "isready", "--endpoint", "http://127.0.0.1:8000"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -22,6 +23,7 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   qdrant:
+    # Keep this minor aligned with qdrant-client in src-tauri/Cargo.toml.
     image: qdrant/qdrant:v1.13.2
     container_name: alice-qdrant
     ports:
@@ -30,7 +32,8 @@ services:
     volumes: ["./data/qdrant:/qdrant/storage"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6333/healthz"]
+      # The Qdrant image includes bash but no wget/curl.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -38,7 +41,7 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   searxng:
-    image: searxng/searxng:2025.7.25-bcdd42c9
+    image: searxng/searxng:2026.7.25-b4e94417b
     container_name: alice-searxng
     ports: ["127.0.0.1:8888:8080"]
     environment:

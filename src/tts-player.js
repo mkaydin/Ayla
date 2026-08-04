@@ -1,6 +1,6 @@
 // Web Audio TTS player with queue management and mouth animation.
-// Receives WAV bytes (Uint8Array → ArrayBuffer → AudioBuffer) from
-// Tauri `generate_tts` and plays them sequentially.
+// Receives WAV bytes (Uint8Array → ArrayBuffer → AudioBuffer) from the shared
+// desktop backend adapter and plays them sequentially.
 // Exposes `getMouthLevel()` for Live2D mouth sync.
 // Supports mute via gain node.
 

@@ -1,0 +1,44 @@
+appId: com.alice.demoness.chromium
+productName: ALICE Chromium
+directories:
+  output: release/electron
+files:
+  - dist/**/*
+  - electron/main.mjs
+  - electron/ipc-policy.mjs
+  - electron/preload.cjs
+  - electron/sidecar-manager.mjs
+  - electron/sidecar-protocol.mjs
+  - electron/static-server.mjs
+  - package.json
+  - "!node_modules/**/*"
+extraResources:
+  - from: electron/assets/icon.png
+    to: assets/icon.png
+  - from: .electron-resources/bin/alice-sidecar
+    to: bin/alice-sidecar
+  - from: .electron-resources/tools/ocr-helper
+    to: tools/ocr-helper
+  - from: .electron-resources/tools/meta_search
+    to: tools/meta_search
+  - from: tts/tts_piper_amy_low
+    to: tts/tts_piper_amy_low
+asar: true
+compression: normal
+npmRebuild: false
+electronLanguages:
+  - en-US
+linux:
+  category: Utility
+  executableName: alice-chromium
+  maintainer: ALICE Project <noreply@localhost>
+  syncDesktopName: true
+  icon: electron/assets/icon.png
+  target:
+    - AppImage
+    - deb
+win:
+  icon: electron/assets/icon.ico
+mac:
+  icon: electron/assets/icon.png
+artifactName: ${productName}-${version}-${arch}.${ext}

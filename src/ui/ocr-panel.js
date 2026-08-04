@@ -4,9 +4,16 @@
 
 import { createPanel, getPanel } from './panel-system.js';
 import { renderMarkdown } from '../lib/markdown.js';
-import { invoke, getIpc } from '../lib/ipc.js';
+import {
+  invoke,
+  invokeCancelable,
+  hasDesktopBackend,
+  listenEvent,
+  selectFiles,
+} from '../lib/ipc.js';
 import { notifyProcess } from '../lib/process-notify.js';
 import { events } from '../lib/events.js';
+import { escapeHtml } from '../lib/dom.js';
 
 let queueItems = [];
 let activeMethod = 'quick_extract';
@@ -70,23 +77,22 @@ function setupUpload(body, panel) {
   const extensions = activeMethod === 'ocr' ? ['pdf'] : ['pdf', 'txt', 'md', 'json', 'docx'];
 
   zone.addEventListener('click', async () => {
-    if (window.__TAURI_INTERNALS__) {
-      try {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const selected = await open({
-          multiple: true,
-          filters: [{ name: 'Documents', extensions }],
-        });
-        if (selected) {
-          const files = Array.isArray(selected) ? selected : [selected];
-          for (const path of files) {
-            queueFile({ name: path.split('/').pop() || path, path, size: 0 });
-          }
-        }
-      } catch (e) {
+    try {
+      const selected = await selectFiles({
+        multiple: true,
+        filters: [{ name: 'Documents', extensions }],
+      });
+      if (selected === null) {
         openBrowserPicker();
+        return;
       }
-    } else {
+      for (const path of selected) {
+        if (typeof path === 'string') {
+          queueFile({ name: path.split(/[/\\]/).pop() || path, path, size: 0 });
+        }
+      }
+    } catch (e) {
+      console.warn('Native document picker failed:', e);
       openBrowserPicker();
     }
   });
@@ -167,46 +173,77 @@ async function processNextInQueue() {
   if (!item) return;
 
   item.status = 'processing';
+  item.cancelRequested = false;
   renderQueue();
 
   const label = item.method === 'ocr' ? 'OCR' : 'Quick Extract';
-  notifyProcess('start', 'doc-process', { filename: item.filename, method: label });
+  notifyProcess('start', 'doc-process', {
+    filename: item.filename,
+    method: label,
+    operationId: item.id,
+  });
+  let unlistenStarted = () => {};
 
   try {
-    const ipcFn = getIpc();
-    if (ipcFn && item.path) {
-      events.emit('status-log', { type: 'info', message: label + ': processing ' + item.filename + '...' });
-
-      if (item.method === 'ocr') {
-        const result = await invoke('run_ocr', { filePath: item.path });
-        item.text = result.text || '';
-        item.chars = item.text.length;
-        item.pages = result.pages || '?';
-        item.processId = result.pid || null;
-      } else {
-        const result = await invoke('run_quick_extract', { filePath: item.path });
-        item.text = result.text || '';
-        item.chars = result.chars || item.text.length;
-        item.chunks = result.chunks || 0;
-      }
-
-      item.status = 'complete';
-      events.emit('status-log', { type: 'success', message: label + ': ' + item.filename + ' done — ' + item.chars.toLocaleString() + ' chars' + (item.chunks ? ', ' + item.chunks + ' chunks' : '') });
-      notifyProcess('complete', 'doc-process', { filename: item.filename, chars: item.chars, chunks: item.chunks });
-    } else {
-      events.emit('status-log', { type: 'info', message: label + ': simulating for ' + item.filename + '...' });
-      await new Promise(r => setTimeout(r, 800));
-      item.text = '# ' + label + ' Output\n\nExtracted text for ' + item.filename + '.\n\nIn Tauri mode with Docker services up, the actual pipeline runs.';
-      item.chars = item.text.length;
-      item.chunks = item.method === 'quick_extract' ? 2 : 0;
-      item.status = 'complete';
-      events.emit('status-log', { type: 'success', message: label + ': ' + item.filename + ' simulated' });
-      notifyProcess('complete', 'doc-process', { filename: item.filename, chars: item.chars });
+    if (!hasDesktopBackend()) {
+      throw new Error('Document processing requires the Rust desktop backend');
     }
+    if (!item.path) {
+      throw new Error('A native local file path is required for document processing');
+    }
+    events.emit('status-log', { type: 'info', message: label + ': processing ' + item.filename + '...' });
+
+    if (item.method === 'ocr') {
+      unlistenStarted = await listenEvent('ocr-started', (event) => {
+        if (
+          event.payload?.requestId
+          && event.payload.requestId !== item.operation?.requestId
+        ) return;
+        if (event.payload?.pid) {
+          item.processId = event.payload.pid;
+          item.operation?.setProcessId(item.processId);
+        }
+      });
+      item.operation = invokeCancelable('run_ocr', { filePath: item.path });
+      if (item.cancelRequested) await item.operation.cancel().catch(() => false);
+      const result = await item.operation.promise;
+      item.text = result.text || '';
+      item.chars = item.text.length;
+      item.pages = result.pages || '?';
+      item.processId = result.pid || null;
+    } else {
+      item.operation = invokeCancelable('run_quick_extract', { filePath: item.path });
+      if (item.cancelRequested) await item.operation.cancel().catch(() => false);
+      const result = await item.operation.promise;
+      item.text = result.text || '';
+      item.chars = result.chars || item.text.length;
+      item.chunks = result.chunks || 0;
+    }
+
+    item.status = 'complete';
+    events.emit('status-log', { type: 'success', message: label + ': ' + item.filename + ' done — ' + item.chars.toLocaleString() + ' chars' + (item.chunks ? ', ' + item.chunks + ' chunks' : '') });
+    notifyProcess('complete', 'doc-process', {
+      filename: item.filename,
+      method: label,
+      chars: item.chars,
+      chunks: item.chunks,
+      operationId: item.id,
+    });
   } catch (e) {
     item.status = 'failed';
-    item.error = e.message || String(e);
-    notifyProcess('error', 'doc-process', { filename: item.filename, reason: item.error });
+    item.error = item.cancelRequested || e?.code === 'request_cancelled'
+      ? 'Cancelled by user'
+      : e.message || String(e);
+    notifyProcess(item.cancelRequested || e?.code === 'request_cancelled' ? 'cancel' : 'error', 'doc-process', {
+      filename: item.filename,
+      method: label,
+      reason: item.error,
+      operationId: item.id,
+    });
+  } finally {
+    try { unlistenStarted(); } catch {}
+    delete item.operation;
+    item.cancelRequested = false;
   }
 
   renderQueue();
@@ -230,8 +267,8 @@ function renderQueue() {
     el.className = 'ocr-queue-item ' + (item.status === 'complete' ? 'complete' : item.status === 'failed' ? 'failed' : '');
     el.innerHTML = `
       <div class="ocr-item-header">
-        <span class="ocr-item-name">${icon} ${item.filename}</span>
-        <span class="ocr-item-status ${item.status}">${statusLabel(item.status)}</span>
+        <span class="ocr-item-name">${icon} ${escapeHtml(item.filename)}</span>
+        <span class="ocr-item-status ${item.status}">${item.cancelRequested ? 'Cancelling\u2026' : statusLabel(item.status)}</span>
       </div>
       <div class="ocr-item-meta">
         <span class="ocr-method-badge">${methodBadge}</span>
@@ -240,7 +277,10 @@ function renderQueue() {
       ${item.status === 'processing' ? `
         <div class="ocr-item-progress"><div class="ocr-item-progress-fill" style="width:${item.progress}%"></div></div>
         <div class="ocr-item-actions">
-          <button class="ocr-action-btn discard" data-action="cancel" data-id="${item.id}">\u23F9 Stop</button>
+          <button class="ocr-action-btn discard" data-action="cancel" data-id="${item.id}"
+            ${item.cancelRequested ? 'disabled' : ''}>
+            ${item.cancelRequested ? '\u23F3 Cancelling\u2026' : '\u23F9 Stop'}
+          </button>
         </div>` : ''}
       ${item.status === 'complete' ? `
         <div class="ocr-item-actions">
@@ -258,7 +298,7 @@ function renderQueue() {
           <button class="ocr-action-btn" data-action="retry" data-id="${item.id}">\u21BA Retry</button>
           <button class="ocr-action-btn discard" data-action="discard" data-id="${item.id}">\u2717 Discard</button>
         </div>
-        <div style="font-size:10px;color:#fca5a5;margin-top:4px">${item.error || 'Unknown error'}</div>` : ''}
+        <div style="font-size:10px;color:#fca5a5;margin-top:4px">${escapeHtml(item.error || 'Unknown error')}</div>` : ''}
     `;
 
     el.querySelectorAll('.ocr-action-btn').forEach(btn => {
@@ -274,9 +314,8 @@ function renderQueue() {
         else if (action === 'retry') { target.status = 'queued'; renderQueue(); processNextInQueue(); }
         else if (action === 'cancel') {
           events.emit('status-log', { type: 'info', message: 'Cancelling ' + target.filename });
-          if (target.processId) invoke('cancel_process', { pid: target.processId }).catch(() => {});
-          target.status = 'failed';
-          target.error = 'Cancelled by user';
+          target.cancelRequested = true;
+          void target.operation?.cancel().catch(() => false);
           renderQueue();
         }
       });
@@ -305,20 +344,32 @@ function renderPreview(item) {
 }
 
 async function approveItem(item) {
-  const ipcFn = getIpc();
   const label = item.method === 'ocr' ? 'ocr' : 'quick_extract';
-  notifyProcess('start', 'kb-ingest', { source: item.filename });
+  const announcementData = {
+    kind: 'document',
+    source: item.filename,
+    target: 'ocr',
+    operationId: item.id,
+  };
+  notifyProcess('start', 'kb-ingest', announcementData);
   item.status = 'processing';
   item.progress = 0;
+  item.cancelRequested = false;
   renderQueue();
 
-  if (ipcFn) {
-    try {
+  if (!hasDesktopBackend()) {
+    item.status = 'failed';
+    item.error = 'Knowledge ingestion requires the Rust desktop backend';
+    notifyProcess('error', 'kb-ingest', { ...announcementData, reason: item.error });
+    renderQueue();
+    return;
+  }
+
+  try {
       item.progress = 10; renderQueue();
       events.emit('status-log', { type: 'info', message: 'Saving file record...' });
       await invoke('save_file_record', { name: item.filename, path: item.path, chars: item.chars, sourceType: label, text: item.text });
 
-      const { listenEvent } = await import('../lib/ipc.js');
       const unlisten = await listenEvent('ingest-progress', (event) => {
         item.progress = Math.max(item.progress || 20, event.payload.pct ?? 20);
         const step = event.payload.step || 'processing';
@@ -328,20 +379,32 @@ async function approveItem(item) {
 
       try {
         item.progress = 20; renderQueue();
-        const result = await invoke('ingest_text', { text: item.text, source: item.filename, sourceType: label });
+        item.operation = invokeCancelable('ingest_text', {
+          text: item.text,
+          source: item.filename,
+          sourceType: label,
+        });
+        if (item.cancelRequested) await item.operation.cancel().catch(() => false);
+        const result = await item.operation.promise;
 
         item.progress = 100; renderQueue();
-        notifyProcess('complete', 'kb-ingest', { source: item.filename });
+        notifyProcess('complete', 'kb-ingest', announcementData);
         events.emit('status-log', { type: 'success', message: 'KB: ' + result });
+        events.emit('kb-refresh');
       } finally {
+        delete item.operation;
+        item.cancelRequested = false;
         // Always release the ingest-progress listener, even on error (issue H13 — previously
         // each failed approve re-registered a ghost handler that mutated stale `item` refs).
         try { unlisten(); } catch {}
       }
-    } catch (e) {
-      console.warn('Ingest failed:', e);
-      notifyProcess('error', 'kb-ingest', { reason: e.message || String(e) });
-    }
+  } catch (e) {
+    console.warn('Ingest failed:', e);
+    item.status = 'failed';
+    item.error = e.message || String(e);
+    notifyProcess('error', 'kb-ingest', { ...announcementData, reason: e.message || String(e) });
+    renderQueue();
+    return;
   }
 
   item.status = 'ingested';

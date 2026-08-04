@@ -31,8 +31,11 @@ Once you approve the report, I can ingest all findings into my knowledge base fo
   }
 
   if (process === 'kb-ingest') {
-    if (phase === 'complete') {
+    if (phase === 'complete' && data.nodes != null) {
       return `[neutral] Knowledge base updated. Added ${data.nodes} nodes, ${data.edges} relations, and ${data.facts} facts. Total knowledge graph now contains ${data.totalNodes} nodes and ${data.totalEdges} edges.`;
+    }
+    if (phase === 'complete') {
+      return `[neutral] ${data.source || 'Document'} added to the knowledge base.`;
     }
     if (phase === 'error') {
       return `[angry] Knowledge base update failed: ${data.reason}. The data is preserved locally; I will retry automatically when the database recovers.`;

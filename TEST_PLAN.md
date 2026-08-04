@@ -32,21 +32,62 @@ curl -s http://localhost:11434/api/embed -d '{"model":"qwen3-embedding:0.6b","in
 # Quick chat test
 curl -s http://localhost:11434/api/chat -d '{"model":"gemma4:e4b","messages":[{"role":"user","content":"Say hi"}],"stream":false}' | jq '.message.content'
 # Expected: non-empty string
+
+# Automatic context selection
+cd src-tauri
+cargo test memory::config::tests::selects_context_buckets_and_respects_gpu_cap
+# Expected: short/medium/large requests select 8K/16K/32K and never exceed the configured cap
 ```
 
 ### 3. Rust Compilation
 
 ```bash
-cd src-tauri && cargo check
-# Expected: Finished with only warnings, no errors
+cargo test --manifest-path crates/alice-core/Cargo.toml
+cargo test --manifest-path crates/alice-sidecar/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml
+# Expected: all non-live tests pass and both desktop adapters compile
 ```
 
-### 4. Frontend Build
+### 4. Sidecar Protocol
 
 ```bash
-npm run build
-# Expected: ✓ built in <5s
+npm run sidecar:build
+npm run sidecar:diagnostic
+# Expected: 29 methods advertised; reads, Quick Extract, offline ingestion,
+# cancellation, structured errors, allowlist, and clean shutdown report "ok"
+
+npm run sidecar:diagnostic:live
+# Expected with Docker/Ollama running: dbReady=true and real graph, file,
+# chat-session, and search-history counts are returned without mutations.
+
+npm run sidecar:diagnostic:mutations
+# Expected with Docker running: one unique chat session is written, its two
+# messages are read back, the session is deleted, and recordRemaining=false.
+
+npm run sidecar:diagnostic:features
+# Expected with Docker/Ollama running: valid WAV, streamed chat, chat/search
+# cancellation, reversible KB ingestion, no new search history, and clean
+# shutdown all report ok.
+
+npm run sidecar:diagnostic:ocr
+# Expected with deepseek-ocr installed: non-empty text, a correlated ocr-started
+# event, temporaryOutputsRemaining=0, and cleanShutdown=true. Set
+# ALICE_OCR_FIXTURE to select a specific local PDF.
 ```
+
+### 5. Frontend and Electron Build
+
+```bash
+npm run check
+npm run electron:pack
+# Expected: frontend tests/build pass and release/electron/linux-unpacked
+# contains executable resources/bin/alice-sidecar, tools/ocr-helper,
+# tools/meta_search, the Piper model, and app.asar. electron:inspect reports ok.
+```
+
+`npm run test` also enforces the Phase 4 UI boundary: feature modules may not
+access Tauri/Electron globals, raw IPC implementations, or the Ollama proxy
+directly, and OCR/research panels may not contain simulated success paths.
 
 ---
 
@@ -86,9 +127,9 @@ npm run build
 
 | Test | Code | Expected |
 |------|------|----------|
-| Entity extraction | `extractor.extract_entities("I use Rust and Tauri")` | Ok(vec contains "Rust", "Tauri") |
-| Fact extraction | `extractor.extract_facts("master prefers Rust")` | Ok(vec with ["master","prefers","Rust",...]) |
-| Relation extraction | `extractor.extract_relations("Rust is used by Tauri")` | Ok(vec with ["Rust","USES","Tauri"] or similar) |
+| Typed extraction | `extractor.extract_all("I use Rust and Tauri")` | Typed Rust/Tauri entities and a grounded relation |
+| Document extraction | `extractor.extract_document(text, filename)` | All chunks processed and results merged/deduplicated |
+| Relation endpoints | Parse a relation whose endpoints are absent from `entities` | Endpoints are added as graph entities |
 | Summarizer | `summarizer.summarize_turn("hello","hi there")` | Ok(non-empty string) |
 | Importance scoring | `summarizer.score_importance("remember I like Rust","noted")` | Ok(> 0.3) |
 
@@ -139,12 +180,12 @@ Test: Conversation Flow
 3. manager.process_turn("hello", "hi master")
 4. Verify: Ok(())
 
-Test: KB CRUD
+Test: Read-only KB Graph and File Cascade Delete
 1. invoke get_kb_data → { nodes: [], edges: [], files: [] }
-2. invoke kb_add_node { name: "Rust", nodeType: "Concept" }
-3. invoke get_kb_data → nodes has 1 entry
-4. invoke kb_add_edge { from: "master", to: "Rust", relation: "PREFERS", confidence: 0.9 }
-5. invoke get_kb_data → edges has 1 entry
+2. ingest a document and verify graph nodes appear with its filename as source
+3. verify Graph, Nodes, and Edges tabs expose no add/delete controls
+4. invoke delete_file_record { name, deleteNodes: true }
+5. verify its file record, document vectors, and source-tagged graph nodes are removed
 
 Test: Ingest Text
 1. invoke ingest_text { text: "master uses Python", source: "test", sourceType: "manual" }
@@ -225,13 +266,18 @@ Test: Tool Dispatch (requires Ollama)
 | Test | How | Expected |
 |------|-----|----------|
 | Open panel | Click 🔍 in sidebar or Ctrl+S | Search panel appears |
-| Search history | Previous searches listed | Query, paper count, timestamp |
-| View report | Click ▶ on history item | Report renders with synthesis + paper cards |
+| Gathering mode | Select Knowledge document / Scientific papers | Description and topic placeholder update |
+| Search history | Restart app after a completed search | Topic, mode, PDF count, and processing state load from SurrealDB |
+| View report | Click ▶ on history item | KB-ready document, downloaded PDFs, and analyzed sources render |
 | Progress display | Start a search | Log entries appear with progress bar |
-| PDF open | Click 📄 on paper card | PDF opens in system viewer |
-| Copy citation | Click 📋 on paper card | Citation copied, button says "Copied!" |
-| Approve search | Click ✓ Approve button | KB ingestion triggered |
-| Send to OCR | Click → Send PDFs to OCR | OCR panel receives files |
+| Parse noisy output | Run search with Lightpanda CDP warnings | Final JSON report loads instead of “Parse error” |
+| PDF open | Click Open on a downloaded document | PDF opens in system viewer |
+| Copy citation | Click 📋 on analyzed source | Citation copied, button says "Copied!" |
+| Knowledge document | Click Add knowledge document to KB | Markdown is saved as a KB file and ingested |
+| Quick Extract | Click Quick on a PDF | Text and method/status persist in `search_document` |
+| PDF OCR | Click OCR on a PDF | OCR text and method/status persist in `search_document` |
+| Batch integration | Click Quick Extract all → KB / OCR all PDFs → KB | Documents process sequentially, persist, and enter KB |
+| Processed history | Restart app and open the topic | Processed/In KB states remain and View text lazy-loads output |
 
 ### Knowledge Base Panel
 
@@ -243,15 +289,12 @@ Test: Tool Dispatch (requires Ollama)
 | Node drag | Drag a node | Node repositions, others stay |
 | Canvas zoom | Scroll wheel on canvas | Zoom in/out |
 | Type filter | Select filter dropdown → "Tool" | Only Tool nodes shown |
-| Nodes tab | Click "Nodes" | Table of all nodes |
+| Nodes tab | Click "Nodes" | Read-only table of all nodes |
 | Search nodes | Type in search box | Table filters |
-| Delete node | Click ✗ on a row | Confirmation → node removed |
-| Edges tab | Click "Edges" | Table of all relations |
-| Delete edge | Click ✗ on a row | Confirmation → edge removed |
+| Edges tab | Click "Edges" | Read-only table of all relations |
 | Files tab | Click "Files" | Table of ingested files |
-| Add node | Click "+ Add Node" → enter name/type | Node appears in graph |
-| Add edge | Click "+ Add Edge" → enter from/to/relation | Edge appears |
-| Remove selected | Select node → click "Remove" | Node and edges deleted |
+| Graph controls | Inspect Graph, Nodes, and Edges tabs | No manual add/delete controls |
+| Delete document | Delete a row in Files and confirm | File, vectors, and its source-tagged graph nodes are removed |
 
 ### Sidebar
 
@@ -327,15 +370,27 @@ Test: Tool Dispatch (requires Ollama)
 
 ```
 1. Open KB panel (Ctrl+K)
-2. Add a node: "Rust" type Concept
-3. Add a node: "master" type Person
-4. Add edge: master PREFERS Rust
+2. Ingest a document that mentions "Rust" and "master"
+3. Approve the extracted document
+4. Refresh the KB after extraction completes
 5. Verify: Both nodes and edge visible in Graph tab
 6. Click "Rust" node → detail panel shows info
 7. Switch to Nodes tab → both nodes listed
 8. Switch to Edges tab → edge listed
-9. Delete the edge, delete one node
-10. Verify: Remaining elements correct
+9. Ingest a second document and verify its cluster is spaced apart from the first
+10. Click "Re-layout" and verify clusters remain separated and the full graph fits
+11. Click "AI Analyze & Improve", confirm, and wait for the result
+12. Verify the status shows batch progress and an ETA; cloud models may show `2× cloud`
+13. Interrupt a long run after at least one batch, retry, and verify completed batches are reported as resumed
+14. Verify high-confidence aliases collapse into one node and all incoming/outgoing relations point to it
+15. Verify unclear node names gain concise canonical names and meanings without changing document nodes
+16. Verify vague relation labels become concise semantic labels without changing direction or facts
+17. Run analysis again and verify nodes with existing meanings are skipped by the incremental plan
+18. Click a node and verify direct relations animate as bright wavy lines and connected nodes use a different glow color
+19. Verify its meaning appears without a long relation-description list
+20. Switch to Files and delete one source document
+21. Verify shared merged nodes remain when the second document still owns them
+22. Delete the final source and verify its vectors, nodes, and relations are removed
 ```
 
 ### Flow 5: OCR Pipeline (requires deepseek-ocr)
@@ -353,13 +408,14 @@ Test: Tool Dispatch (requires Ollama)
 
 ```
 1. Open Search panel (Ctrl+S)
-2. Send in chat: "search papers on attention mechanisms"
-3. Wait for search to start
-4. Verify: Search panel shows progress log
-5. Wait for completion
-6. Verify: Report appears with synthesis, paper cards
-7. Click ✓ Approve → verify KB ingestion
-8. Check KB panel for new nodes
+2. Select "Knowledge document", enter "attention mechanisms", and click Gather
+3. Verify: progress completes without a JSON parse error
+4. Verify: the KB-ready document and downloaded-document inventory appear
+5. Click Add knowledge document to KB
+6. Run another topic in "Scientific papers" mode
+7. Click Quick Extract all → KB (then test OCR all PDFs → KB on a small set)
+8. Restart the app and verify both topics, documents, processed text, and KB states persist
+9. Check KB Files and Graph tabs for the ingested knowledge document and papers
 ```
 
 ### Flow 7: Panel Persistence
@@ -392,9 +448,13 @@ Test: Tool Dispatch (requires Ollama)
 | Cold start time | < 5s | Time from `npm run tauri dev` to "Ready" log |
 | First chat response | < 3s streaming start | Time from Enter to first token |
 | Embedding latency | < 500ms | Time embed("test") in Rust |
-| LLM extraction | < 3s | Time extract_entities() on short text |
+| LLM extraction | Hardware-dependent | Log entities/facts/relations and disconnected components |
+| LLM graph cleanup | Hardware-dependent | Run ignored `live_cleanup_analyzer_finds_aliases` test |
+| Ollama context | 8K/16K/32K, ≤ configured cap | Inspect `ollama ps` during short and dense requests |
 | Consolidation sweep | < 5s for 1000 facts | Run consolidate with many facts |
 | Panel drag FPS | 60 FPS | Drag panel quickly — no jank |
+| Fullscreen render | Near 60 FPS in Auto | Maximize window and inspect System Status render telemetry |
+| Resize responsiveness | No multi-frame stalls | Continuously resize window; verify temporary 30 FPS/low-resolution mode |
 | Markdown render | < 100ms for 10KB | Render large markdown block |
 
 ---

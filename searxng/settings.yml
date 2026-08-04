@@ -22,7 +22,8 @@ server:
   secret_key: "ultrasecretkey"
   bind_address: "127.0.0.1"
   port: 8080
-  limiter: true
+  # The app binds SearXNG to localhost and does not run a Valkey service.
+  limiter: false
   image_proxy: false
 
 outgoing:
@@ -48,11 +49,6 @@ engines:
   - name: crossref
     engine: crossref
     shortcut: cr
-    disabled: false
-
-  - name: dblp
-    engine: dblp
-    shortcut: dblp
     disabled: false
 
   - name: wikipedia

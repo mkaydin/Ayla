@@ -19,6 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.1", features = [] }
 
 [dependencies]
+alice-core = { path = "../crates/alice-core" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
@@ -29,7 +30,9 @@ tauri-plugin-dialog = "2"
 sherpa-onnx = { path = "../tts/sherpa-onnx/sherpa-onnx/rust/sherpa-onnx" }
 
 # Memory system
-qdrant-client = "1"
+# Keep this minor aligned with docker-compose.yml. Qdrant only supports clients
+# within one server minor; a broad "1" range can silently become incompatible.
+qdrant-client = { version = "=1.13.0", default-features = false }
 petgraph = { version = "0.6", features = ["serde-1"] }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
@@ -43,4 +46,3 @@ async-trait = "0.1"
 pdf-extract = "0.7"
 quick-xml = "0.37"
 zip = "2.2"
-

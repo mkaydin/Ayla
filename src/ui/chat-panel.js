@@ -1,8 +1,12 @@
 // ── Chat Panel ─────────────────────────────────────────────
 
 import { createPanel, getPanel } from './panel-system.js';
-import { invoke, getIpc } from '../lib/ipc.js';
-import { renderMarkdown } from '../lib/markdown.js';
+import {
+  hasDesktopBackend,
+  invoke,
+  invokeStreamCancelable,
+} from '../lib/ipc.js';
+import { MarkdownSpeechStream, renderMarkdown } from '../lib/markdown.js';
 import { events } from '../lib/events.js';
 import { CORE_IDENTITY, EXPR_TAGS, EXPR_MAP } from '../lib/prompts.js';
 import { generateAliceResponse } from '../lib/alice-responses.js';
@@ -44,9 +48,8 @@ export function initChatPanel(applyExpressionFn) {
   const sessions = new Map();
   let activeSession = null;
   let streaming = false;
-  // AbortController for the in-flight Ollama stream (issue H3) — allows cleanup on
-  // error, panel teardown, or window unload so the reader/connection is released.
-  let streamAbort = null;
+  let streamOperation = null;
+  let streamCancelRequested = false;
 
   const defaultSession = {
     id: crypto.randomUUID(),
@@ -67,17 +70,21 @@ export function initChatPanel(applyExpressionFn) {
   const kbBtn = document.getElementById('chat-to-kb-btn');
 
   function renderSessions() {
-    sessionList.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     for (const [id, s] of sessions) {
       const item = document.createElement('div');
       item.className = 'chat-session-item' + (id === activeSession.id ? ' active' : '');
-      item.innerHTML = `
-        <div class="chat-session-title">${s.title}</div>
-        <div class="chat-session-meta">${new Date(s.createdAt).toLocaleDateString()} \u00B7 ${s.messages.filter(m => m.role !== 'system').length} msgs</div>
-      `;
+      const title = document.createElement('div');
+      title.className = 'chat-session-title';
+      title.textContent = s.title;
+      const meta = document.createElement('div');
+      meta.className = 'chat-session-meta';
+      meta.textContent = `${new Date(s.createdAt).toLocaleDateString()} \u00B7 ${s.messages.filter(m => m.role !== 'system').length} msgs`;
+      item.append(title, meta);
       item.addEventListener('click', () => switchSession(id));
-      sessionList.appendChild(item);
+      fragment.appendChild(item);
     }
+    sessionList.replaceChildren(fragment);
   }
 
   function switchSession(id) {
@@ -112,7 +119,10 @@ export function initChatPanel(applyExpressionFn) {
     activeSession = [...sessions.values()][sessions.size - 1];
     renderMessages();
     renderSessions();
-    if (getIpc()) invoke('delete_chat_session', { sessionId: id }).catch(e => console.warn('delete session:', e));
+    if (hasDesktopBackend()) {
+      invoke('delete_chat_session', { sessionId: id })
+        .catch(e => console.warn('delete session:', e));
+    }
   }
 
   async function sendToKb() {
@@ -147,11 +157,11 @@ export function initChatPanel(applyExpressionFn) {
   }
 
   function renderMessages() {
-    msgContainer.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     for (const msg of activeSession.messages) {
       if (msg.role === 'system') continue;
       const div = document.createElement('div');
-      div.className = 'msg ' + msg.role;
+      div.className = 'msg ' + (msg.role === 'assistant' ? 'model' : msg.role);
       // Markdown-render assistant/model/system messages (issue H2: stored role is 'assistant',
       // which previously fell through to the textContent branch and showed raw markdown).
       if (msg.role === 'model' || msg.role === 'assistant' || msg.role === 'system') {
@@ -159,8 +169,9 @@ export function initChatPanel(applyExpressionFn) {
       } else {
         div.textContent = msg.content;
       }
-      msgContainer.appendChild(div);
+      fragment.appendChild(div);
     }
+    msgContainer.replaceChildren(fragment);
     msgContainer.scrollTop = msgContainer.scrollHeight;
   }
 
@@ -169,34 +180,15 @@ export function initChatPanel(applyExpressionFn) {
     activeSession.updatedAt = Date.now();
   }
 
-  const extractSentences = (text, cursor) => {
-    const tail = text.slice(cursor);
-    const re = /[^.!?\n]+[.!?\n]+/g;
-    const sentences = [];
-    let m, newCursor = cursor;
-    while ((m = re.exec(tail)) !== null) {
-      sentences.push(m[0].trim());
-      newCursor = cursor + m.index + m[0].length;
-    }
-    const leftover = text.slice(newCursor);
-    if (leftover.length > 90) {
-      const lastSpace = leftover.slice(0, 90).lastIndexOf(' ');
-      const splitAt = lastSpace > 30 ? lastSpace : 85;
-      sentences.push(leftover.slice(0, splitAt).trim());
-      newCursor += splitAt;
-    }
-    return { sentences, cursor: newCursor };
-  };
-
-  // Strip expression tag from text, return { displayText, ttsText, exprName }
+  // Strip expression tag from text, return the display content and expression.
   function stripTag(text) {
     const m = text.match(/^\[(amazed|angry|cry|love|nervous|sleepy|customise|neutral)\]\s*/i);
     if (m) {
       const exprName = EXPR_MAP[m[1].toLowerCase()];
       const stripped = text.slice(m[0].length);
-      return { displayText: stripped, ttsText: stripped, exprName };
+      return { displayText: stripped, exprName };
     }
-    return { displayText: text, ttsText: text, exprName: null };
+    return { displayText: text, exprName: null };
   }
 
   async function sendMessage() {
@@ -218,13 +210,15 @@ export function initChatPanel(applyExpressionFn) {
     thinkDiv.textContent = '\u23F3';
     msgContainer.appendChild(thinkDiv);
 
-    sendBtn.disabled = true;
+    sendBtn.disabled = false;
+    sendBtn.textContent = '\u25A0';
+    sendBtn.title = 'Stop response';
     streaming = true;
+    streamCancelRequested = false;
 
-    // Enrich prompt via Tauri
+    // Enrich through the shared Rust backend when a desktop host is present.
     let systemPrompt = CORE_IDENTITY;
-    const ipcFn = getIpc();
-    if (ipcFn) {
+    if (hasDesktopBackend()) {
       try {
         const result = await invoke('process_message', { query, basePrompt: systemPrompt });
         if (result.system_prompt) systemPrompt = result.system_prompt;
@@ -240,101 +234,85 @@ export function initChatPanel(applyExpressionFn) {
     ];
 
     try {
-      streamAbort = new AbortController();
-      const r = await fetch('/api/ollama/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: streamAbort.signal,
-        body: JSON.stringify({
-          model: 'gemma4:e4b', messages: msgs, stream: true,
-          options: { temperature: 0.7 },
-        }),
-      });
-      if (!r.ok) throw new Error('Ollama: ' + r.status);
-
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder();
-      let raw = '', buffer = '', tagDone = false, displayText = '', ttsText = '', ttsSent = 0;
+      let raw = '', tagDone = false, displayText = '';
       let exprApplied = false;
       let renderScheduled = false;
+      let lastRenderAt = 0;
+      const speechStream = new MarkdownSpeechStream();
       thinkDiv.textContent = '';
 
-      // Debounced markdown render — only once per animation frame
+      const scheduleSpeech = (content) => {
+        for (const segment of speechStream.push(content)) {
+          events.emit('tts-schedule', segment);
+        }
+      };
+
+      // Markdown parsing grows with the whole response. Cap it at 20fps so long
+      // streams do not monopolize the webview's render thread.
       function scheduleRender() {
         if (renderScheduled) return;
         renderScheduled = true;
         requestAnimationFrame(() => {
-          thinkDiv.innerHTML = renderMarkdown(displayText);
-          msgContainer.scrollTop = msgContainer.scrollHeight;
-          renderScheduled = false;
+          const wait = Math.max(0, 50 - (performance.now() - lastRenderAt));
+          setTimeout(() => {
+            thinkDiv.innerHTML = renderMarkdown(displayText);
+            msgContainer.scrollTop = msgContainer.scrollHeight;
+            lastRenderAt = performance.now();
+            renderScheduled = false;
+          }, wait);
         });
       }
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const c = JSON.parse(line);
-            if (!c.message?.content) continue;
-            raw += c.message.content;
+      function consumeDelta(content) {
+        if (!content) return;
+        raw += content;
 
-            if (!tagDone) {
-              const lb = raw.indexOf(']');
-              if (raw.startsWith('[') && lb > 0 && lb < 20) {
-                const tag = raw.slice(1, lb).toLowerCase();
-                if (EXPR_TAGS.includes(tag)) {
-                  if (!exprApplied && applyExpressionFn) {
-                    const exprName = EXPR_MAP[tag];
-                    if (exprName) applyExpressionFn(exprName);
-                    else if (tag === 'neutral') applyExpressionFn(null);
-                    exprApplied = true;
-                  }
-                  displayText = raw.slice(lb + 1).replace(/^\s+/, '');
-                  ttsText = displayText;
-                  tagDone = true;
-                  scheduleRender();
-                  continue;
-                }
+        if (!tagDone) {
+          const lb = raw.indexOf(']');
+          if (raw.startsWith('[') && lb > 0 && lb < 20) {
+            const tag = raw.slice(1, lb).toLowerCase();
+            if (EXPR_TAGS.includes(tag)) {
+              if (!exprApplied && applyExpressionFn) {
+                const exprName = EXPR_MAP[tag];
+                if (exprName) applyExpressionFn(exprName);
+                else if (tag === 'neutral') applyExpressionFn(null);
+                exprApplied = true;
               }
-              if (!raw.startsWith('[') && raw.length > 2) {
-                if (!exprApplied && applyExpressionFn) { applyExpressionFn(null); exprApplied = true; }
-                tagDone = true;
-                displayText = raw;
-                ttsText = raw;
-                thinkDiv.textContent = raw;
-                continue;
-              }
-              if (raw.length > 25 && !tagDone) {
-                if (!exprApplied && applyExpressionFn) { applyExpressionFn(null); exprApplied = true; }
-                tagDone = true;
-                displayText = raw;
-                ttsText = raw;
-                thinkDiv.textContent = raw;
-                continue;
-              }
-            } else {
-              displayText += c.message.content;
-              ttsText += c.message.content;
+              displayText = raw.slice(lb + 1).replace(/^\s+/, '');
+              scheduleSpeech(displayText);
+              tagDone = true;
               scheduleRender();
+              return;
             }
-
-            // TTS scheduling — uses displayText (without tag)
-            if (tagDone && ttsText.length > ttsSent) {
-              const { sentences, cursor } = extractSentences(ttsText, ttsSent);
-              for (const s of sentences) {
-                events.emit('tts-schedule', s);
-              }
-              ttsSent = cursor;
-            }
-
-          } catch (e) { /* skip malformed lines */ }
+          }
+          if (!raw.startsWith('[') && raw.length > 2) {
+            if (!exprApplied && applyExpressionFn) { applyExpressionFn(null); exprApplied = true; }
+            tagDone = true;
+            displayText = raw;
+            scheduleSpeech(raw);
+            thinkDiv.textContent = raw;
+            return;
+          }
+          if (raw.length > 25) {
+            if (!exprApplied && applyExpressionFn) { applyExpressionFn(null); exprApplied = true; }
+            tagDone = true;
+            displayText = raw;
+            scheduleSpeech(raw);
+            thinkDiv.textContent = raw;
+            return;
+          }
+        } else {
+          displayText += content;
+          scheduleSpeech(content);
+          scheduleRender();
         }
       }
+
+      streamOperation = invokeStreamCancelable('stream_chat', { messages: msgs }, (event) => {
+        if (event?.type === 'delta') consumeDelta(event.content);
+      });
+      if (streamCancelRequested) await streamOperation.cancel().catch(() => false);
+      await streamOperation.promise;
 
       // Handle any remaining tag (non-streaming or final response)
       if (!tagDone) {
@@ -347,13 +325,13 @@ export function initChatPanel(applyExpressionFn) {
             exprApplied = true;
           }
           displayText = raw.slice(m[0].length);
-          ttsText = displayText;
+          scheduleSpeech(displayText);
         } else {
           displayText = raw;
-          ttsText = raw;
+          scheduleSpeech(displayText);
         }
-        thinkDiv.innerHTML = displayText ? renderMarkdown(displayText) : '';
       }
+      thinkDiv.innerHTML = displayText ? renderMarkdown(displayText) : '';
 
       if (!thinkDiv.textContent.trim() && !thinkDiv.innerHTML.trim()) {
         thinkDiv.textContent = '(no response)';
@@ -364,28 +342,31 @@ export function initChatPanel(applyExpressionFn) {
       const finalText = stripTag(raw0Final).displayText.trim();
       addMessage('assistant', finalText);
 
-      // Send remaining TTS
-      if (ttsText.length > ttsSent) {
-        events.emit('tts-schedule', ttsText.slice(ttsSent).trim());
+      // Flush the last prose fragment after the stream completes. Code, math,
+      // tables, and incomplete Markdown regions remain suppressed.
+      for (const segment of speechStream.finish()) {
+        events.emit('tts-schedule', segment);
       }
 
       // Process turn in background
-      if (getIpc() && finalText) {
+      if (hasDesktopBackend() && finalText) {
         invoke('process_turn', { userMsg: query, assistantMsg: finalText }).catch(() => {});
       }
 
     } catch (e) {
-      if (e.name === 'AbortError') {
+      if (e.name === 'AbortError' || e.code === 'request_cancelled') {
         thinkDiv.textContent = '(cancelled)';
       } else {
         thinkDiv.textContent = 'Error: ' + e.message;
         thinkDiv.style.color = '#f87171';
       }
     } finally {
-      // Release the stream reader/connection if still held (issue H3).
-      if (streamAbort) { streamAbort = null; }
       streaming = false;
+      streamOperation = null;
+      streamCancelRequested = false;
       sendBtn.disabled = false;
+      sendBtn.textContent = '\u2191';
+      sendBtn.title = 'Send';
       inputEl.focus();
       persistSessions();
     }
@@ -413,7 +394,16 @@ export function initChatPanel(applyExpressionFn) {
     inputEl.style.height = 'auto';
     inputEl.style.height = Math.min(120, inputEl.scrollHeight) + 'px';
   });
-  sendBtn.addEventListener('click', sendMessage);
+  sendBtn.addEventListener('click', () => {
+    if (streaming) {
+      streamCancelRequested = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = '\u23F3';
+      void streamOperation?.cancel().catch(() => false);
+      return;
+    }
+    sendMessage();
+  });
   newBtn.addEventListener('click', newSession);
   deleteBtn.addEventListener('click', deleteSession);
   kbBtn.addEventListener('click', sendToKb);
@@ -423,7 +413,7 @@ export function initChatPanel(applyExpressionFn) {
 
   // Save session periodically and on switch
   async function persistSessions() {
-    if (!getIpc()) return;
+    if (!hasDesktopBackend()) return;
     const all = [];
     for (const [id, s] of sessions) {
       all.push({ id, title: s.title, messages: s.messages.filter(m => m.role !== 'system') });
@@ -437,7 +427,7 @@ export function initChatPanel(applyExpressionFn) {
 
   // Restore saved sessions on init (retry if DB not ready)
   async function restoreSessions() {
-    if (!getIpc()) return;
+    if (!hasDesktopBackend()) return;
     const tryLoad = async () => {
       try {
         const saved = await invoke('load_chat_sessions');
@@ -476,8 +466,6 @@ export function initChatPanel(applyExpressionFn) {
   // Auto-save every 30 seconds
   setInterval(persistSessions, 30000);
   window.addEventListener('beforeunload', () => {
-    // Abort any in-flight stream so the fetch reader/connection is released (issue H3).
-    if (streamAbort) { try { streamAbort.abort(); } catch {} streamAbort = null; }
     persistSessions();
   });
 
