@@ -112,10 +112,8 @@ impl KnowledgeExtract {
 
 impl Extractor {
     pub fn new(config: MemoryConfig) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(300))
-            .connect_timeout(Duration::from_secs(5))
-            .build()
+        let client = config
+            .long_ollama_client()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self { config, client }
     }
@@ -336,6 +334,7 @@ impl Extractor {
             .saturating_add(160);
         let mut num_ctx = self.config.ollama_context_for(input_bytes, 8_192);
         let mut retried_after_oom = false;
+        let mut transport_retries = 0usize;
         log::debug!(
             "Knowledge extraction request: input={} bytes, num_ctx={num_ctx}",
             input_bytes
@@ -362,18 +361,49 @@ impl Extractor {
                 }
             });
 
-            let response = self
+            let response = match self
                 .client
                 .post(format!("{}/api/chat", self.config.ollama_url))
                 .json(&body)
                 .send()
                 .await
-                .map_err(|error| format!("LLM request: {}", error))?;
+            {
+                Ok(response) => response,
+                Err(error)
+                    if is_retryable_transport_error(&error)
+                        && transport_retries < self.config.ollama_transport_retries =>
+                {
+                    transport_retries += 1;
+                    retry_ollama_request("request", transport_retries, &error.to_string()).await;
+                    continue;
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "LLM request failed after {} attempt(s): {}",
+                        transport_retries + 1,
+                        error
+                    ));
+                }
+            };
             let status = response.status();
-            let text = response
-                .text()
-                .await
-                .map_err(|error| format!("LLM response: {}", error))?;
+            let text = match response.text().await {
+                Ok(text) => text,
+                Err(error)
+                    if is_retryable_transport_error(&error)
+                        && transport_retries < self.config.ollama_transport_retries =>
+                {
+                    transport_retries += 1;
+                    retry_ollama_request("response", transport_retries, &error.to_string()).await;
+                    continue;
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "LLM response failed after {} attempt(s): {}",
+                        transport_retries + 1,
+                        error
+                    ));
+                }
+            };
 
             if !status.is_success() {
                 if !retried_after_oom && num_ctx > OLLAMA_OOM_FALLBACK_CTX && is_ollama_oom(&text) {
@@ -384,9 +414,25 @@ impl Extractor {
                     retried_after_oom = true;
                     continue;
                 }
+                if is_retryable_http_status(status)
+                    && transport_retries < self.config.ollama_transport_retries
+                {
+                    transport_retries += 1;
+                    retry_ollama_request(
+                        "server",
+                        transport_retries,
+                        &format!(
+                            "HTTP {status}: {}",
+                            crate::memory::safe_truncate(&text, 300)
+                        ),
+                    )
+                    .await;
+                    continue;
+                }
                 return Err(format!(
-                    "LLM HTTP {}: {}",
+                    "LLM HTTP {} after {} attempt(s): {}",
                     status,
+                    transport_retries + 1,
                     crate::memory::safe_truncate(&text, 500)
                 ));
             }
@@ -404,6 +450,24 @@ impl Extractor {
             return Ok(content);
         }
     }
+}
+
+fn is_retryable_transport_error(error: &reqwest::Error) -> bool {
+    !error.is_builder()
+        && (error.is_timeout() || error.is_connect() || error.is_request() || error.is_body())
+}
+
+fn is_retryable_http_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 408 | 425 | 429 | 500 | 502 | 503 | 504)
+}
+
+async fn retry_ollama_request(stage: &str, retry: usize, reason: &str) {
+    let delay_secs = (2_u64.saturating_pow(retry.min(4) as u32)).min(30);
+    log::warn!(
+        "Ollama extraction {stage} failed; retry {retry} in {delay_secs}s: {}",
+        crate::memory::safe_truncate(reason, 500)
+    );
+    tokio::time::sleep(Duration::from_secs(delay_secs)).await;
 }
 
 fn is_ollama_oom(response_body: &str) -> bool {
@@ -764,6 +828,20 @@ mod tests {
         assert!(!is_ollama_oom(
             r#"{"error":"model runner failed to start"}"#
         ));
+    }
+
+    #[test]
+    fn retries_only_temporary_http_failures() {
+        for status in [408, 425, 429, 500, 502, 503, 504] {
+            assert!(is_retryable_http_status(
+                reqwest::StatusCode::from_u16(status).unwrap()
+            ));
+        }
+        for status in [400, 401, 403, 404, 413, 422] {
+            assert!(!is_retryable_http_status(
+                reqwest::StatusCode::from_u16(status).unwrap()
+            ));
+        }
     }
 
     #[test]

@@ -7,11 +7,15 @@ import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 import { TtsPlayer } from './tts-player.js';
 import {
-  LIVE2D_ANIMATION_CATALOG,
-  LIVE2D_EXPRESSIONS,
-} from './live2d/animation-catalog.js';
-import { Live2DAnimationController } from './live2d/animation-controller.js';
-import { Live2DParameterProfile } from './live2d/parameter-profile.js';
+  loadMk6Model,
+  MK6_PARAMETER_IDS,
+} from './live2d/mk6-profile.js';
+import {
+  Mk6ExpressionController,
+  Mk6MotionController,
+} from './live2d/mk6-controller.js';
+import { Mk6AnimationCoordinator } from './live2d/animation-coordinator.js';
+import { Mk6ProceduralAnimator } from './live2d/mk6-procedural.js';
 import { events } from './lib/events.js';
 import {
   getRuntimeInfo,
@@ -20,7 +24,11 @@ import {
   listenEvent,
   showDesktopNotification,
 } from './lib/ipc.js';
-import { initStatusPanel, appendLog } from './ui/status-panel.js';
+import {
+  appendLog,
+  getServiceHealthSnapshot,
+  initStatusPanel,
+} from './ui/status-panel.js';
 import { initSidebar, updateSidebarState } from './ui/sidebar.js';
 import { getPanel, restoreAllPanelStates } from './ui/panel-system.js';
 import {
@@ -33,8 +41,6 @@ import {
 // implementation. This keeps Electron's production policy free of unsafe-eval.
 installCspSafeShaders({ ShaderSystem });
 Live2DModel.registerTicker(Ticker);
-
-const MODEL_URL = '/DemonGirl/demongirl.model3.json';
 
 function storedToggle(key, fallback = true) {
   const value = localStorage.getItem(key);
@@ -66,7 +72,7 @@ const app = new Application({
   width: window.innerWidth,
   height: window.innerHeight,
   backgroundAlpha: 1,
-  backgroundColor: 0x100f18,
+  backgroundColor: 0x07111e,
   useContextAlpha: false,
   antialias: false,
   autoStart: true,
@@ -180,9 +186,10 @@ async function main() {
   await waitForCubismCore();
   appendLog('info', 'Cubism Core loaded');
 
-  const model = await Live2DModel.from(MODEL_URL);
+  const model = await loadMk6Model(Live2DModel);
   app.stage.addChild(model);
   window.__model = model;
+  appendLog('success', 'Mk6 model, physics, expressions, and motions loaded');
 
   // Center & fit
   model.scale.set(1);
@@ -243,42 +250,95 @@ async function main() {
 
   // Live2D core
   const core = model.internalModel.coreModel;
-  const internal = model.internalModel;
-  if (internal.eyeBlink) {
-    internal.eyeBlink.ids = ['ParamEyeLOpen', 'ParamEyeROpen'];
-  }
-
-  // Procedural animations share Pixi's existing ticker. The controller is
-  // intentionally manual in Phase 1; UI and process/LLM triggers are added
-  // only after the animation catalog has been visually validated.
-  const animationProfile = new Live2DParameterProfile(core);
-  const animationController = new Live2DAnimationController(
-    core,
-    animationProfile,
-    LIVE2D_ANIMATION_CATALOG,
-  );
-  events.on('animation-play', request => {
+  const expressionController = new Mk6ExpressionController(model);
+  const motionController = new Mk6MotionController(model);
+  const sleepAfterMs = Number(localStorage.getItem('alice_sleep_after_ms')) || 5 * 60_000;
+  const animationCoordinator = new Mk6AnimationCoordinator({
+    expressionController,
+    motionController,
+    sleepAfterMs,
+  });
+  const proceduralAnimator = new Mk6ProceduralAnimator(core);
+  const resetAuthoredPoseResidue = () => {
+    if (!motionController.isFullBodyMotion()) {
+      proceduralAnimator.resetAuthoredPoseResidue();
+    }
+  };
+  model.internalModel.on('beforeMotionUpdate', resetAuthoredPoseResidue);
+  model.once('destroy', () => {
+    model.internalModel?.off?.('beforeMotionUpdate', resetAuthoredPoseResidue);
+  });
+  const applyExpression = async (id, clearAfterMs = 6_000) => {
+    animationCoordinator.applyChatExpression(id, clearAfterMs);
+    return true;
+  };
+  events.on('motion-play', request => {
     const id = typeof request === 'string' ? request : request?.id;
     if (!id) return;
-    try {
-      animationController.play(id, typeof request === 'object' ? request : {});
-    } catch (error) {
-      console.warn('Animation play failed:', error);
-    }
+    motionController.play(id, typeof request === 'object' ? request : {}).catch(error => {
+      console.warn('Mk6 motion play failed:', error);
+    });
   });
-  events.on('animation-stop', options => animationController.stop(options));
-  window.__animations = Object.freeze({
-    list: () => animationController.list().map(({ id, label, durationMs, loop }) => ({
-      id, label, durationMs, loop,
-    })),
-    play: (id, options) => animationController.play(id, options),
-    stop: options => animationController.stop(options),
-    current: () => animationController.currentAnimation(),
+  events.on('motion-stop', () => motionController.stop());
+  events.on('expression-select', id => {
+    animationCoordinator.setManualLayer(id);
+  });
+  events.on('expression-toggle', id => {
+    animationCoordinator.toggleManualLayer(id);
+  });
+  events.on('expression-clear-all', () => {
+    animationCoordinator.clearManualLayers();
+  });
+  expressionController.onChange(active => {
+    events.emit('expression-state', active);
+  });
+  window.__mk6 = Object.freeze({
+    motions: () => motionController.list(),
+    expressions: () => expressionController.list(),
+    playMotion: (id, options) => motionController.play(id, options),
+    stopMotion: () => motionController.stop(),
+    applyExpression: id => animationCoordinator.setManualLayer(id),
+    toggleExpression: id => animationCoordinator.toggleManualLayer(id),
+    clearExpression: () => animationCoordinator.clearManualLayers(),
+    clearExpressions: () => animationCoordinator.clearManualLayers(),
+    activeExpressions: () => expressionController.active(),
+    current: () => ({
+      motion: motionController.current(),
+      expression: expressionController.current(),
+      animationState: animationCoordinator.getState(),
+    }),
+    animationState: () => animationCoordinator.getState(),
+    setSleepAfterMs: milliseconds => {
+      animationCoordinator.sleepAfterMs = Math.max(60_000, Number(milliseconds) || 300_000);
+      localStorage.setItem('alice_sleep_after_ms', String(animationCoordinator.sleepAfterMs));
+    },
+  });
+
+  for (const [id, online] of getServiceHealthSnapshot()) {
+    animationCoordinator.setServiceHealth(id, online);
+  }
+  events.on('service-health', ({ id, online }) => {
+    animationCoordinator.setServiceHealth(id, online);
+  });
+  events.on('process-notify', ({ phase, process, data }) => {
+    animationCoordinator.handleProcess(phase, process, data);
+  });
+  events.on('chat-response-state', ({ id = 'chat', active }) => {
+    animationCoordinator.setChatResponseActive(id, active);
+  });
+  animationCoordinator.onChange(({ state: animationState, offline }) => {
+    events.emit('animation-state', { state: animationState, offline });
+    if (animationState === 'tracking-lost') {
+      appendLog('error', `Animation: tracking lost (${offline} offline)`);
+    }
   });
 
   // TTS
   const ttsPlayer = new TtsPlayer(core);
   ttsPlayer.init().catch((e) => console.warn('TTS init failed:', e));
+  ttsPlayer.onStateChange(active => {
+    animationCoordinator.setSpeechActive('tts-audio', active);
+  });
 
   const ttsPending = [];
   let ttsBusy = false;
@@ -288,12 +348,14 @@ async function main() {
   const ttsProcess = async () => {
     if (ttsBusy || ttsPending.length === 0) return;
     ttsBusy = true;
+    animationCoordinator.setSpeechActive('tts-generation', true);
     while (ttsPending.length > 0) {
       const request = ttsPending.shift();
       const text = request.text;
       activeTtsDedupeKey = request.dedupeKey;
       try {
         if (hasDesktopBackend()) {
+          if (motionController.current() === 'sleep') motionController.stop();
           appendLog('info', 'TTS: ' + text.slice(0, 60) + '...');
           const wav = await invoke('generate_tts', { text });
           if (wav) ttsPlayer.enqueue(wav instanceof Uint8Array ? wav : new Uint8Array(wav));
@@ -305,6 +367,7 @@ async function main() {
       activeTtsDedupeKey = '';
     }
     ttsBusy = false;
+    animationCoordinator.setSpeechActive('tts-generation', false);
   };
 
   events.on('tts-schedule', (value) => {
@@ -348,54 +411,17 @@ async function main() {
     }
   });
 
-  // Expressions
-  const exprData = {};
-  let currentExpr = null;
-
-  for (const { id: name } of LIVE2D_EXPRESSIONS) {
-    try {
-      const r = await fetch(`/DemonGirl/${name}.exp3.json`);
-      const json = await r.json();
-      exprData[name] = json.Parameters || [];
-    } catch (e) {
-      console.warn('Failed to load expression:', name, e);
-      exprData[name] = [];
-    }
-  }
-
-  function unapplyCurrent() {
-    if (!currentExpr) return;
-    for (const [id, delta] of currentExpr.deltas) {
-      core.setParameterValueById(id, core.getParameterValueById(id) - delta);
-    }
-    currentExpr = null;
-  }
-
-  const applyExpression = (name) => {
-    if (!name || !exprData[name]) { unapplyCurrent(); return; }
-    unapplyCurrent();
-    const deltas = new Map();
-    for (const p of exprData[name]) {
-      const cur = core.getParameterValueById(p.Id);
-      const val = p.Blend === 'Add' ? p.Value : 0;
-      deltas.set(p.Id, val);
-      core.setParameterValueById(p.Id, cur + val);
-    }
-    currentExpr = { name, deltas };
-  };
-  events.on('expression-select', name => applyExpression(name));
-
   // Mouse look
-  let targetHeadX = 0, targetHeadY = 0;
   window.addEventListener('mousemove', (e) => {
+    animationCoordinator.activity();
     if (!state.mouseLook) return;
     const nx = (e.clientX / window.innerWidth) * 2 - 1;
     const ny = (e.clientY / window.innerHeight) * 2 - 1;
-    targetHeadX = nx * 30;
-    targetHeadY = -ny * 30;
-    state.eyeX = nx;
-    state.eyeY = -ny;
-  });
+    proceduralAnimator.setPointerNormalized(nx, ny);
+  }, { passive: true });
+  for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
+    window.addEventListener(eventName, () => animationCoordinator.activity(), { passive: true });
+  }
 
   // Load secondary panels after the Live2D scene is ready. This keeps their
   // markdown, graph, and desktop-backend helpers out of the critical startup bundle.
@@ -443,7 +469,9 @@ async function main() {
   let measuredFrames = 0;
   let measureStartedAt = performance.now();
   app.ticker.add(() => {
+    expressionController.update(app.ticker.deltaMS);
     const now = performance.now();
+    animationCoordinator.tick(now);
     measuredFrames++;
     if (now - measureStartedAt >= 1000) {
       state.renderFps = Math.round((measuredFrames * 1000) / (now - measureStartedAt));
@@ -461,39 +489,30 @@ async function main() {
       measureStartedAt = now;
     }
 
-    state.headX += (targetHeadX - state.headX) * 0.1;
-    state.headY += (targetHeadY - state.headY) * 0.1;
-    core.setParameterValueById('ParamAngleX', state.headX);
-    core.setParameterValueById('ParamAngleY', state.headY);
-    core.setParameterValueById('ParamAngleZ', state.headX * -0.2);
-    core.setParameterValueById('ParamEyeBallX', state.eyeX);
-    core.setParameterValueById('ParamEyeBallY', state.eyeY);
-
-    core.setParameterValueById('ParamBreath', (Math.sin(now / 1000) * 0.5 + 0.5));
-
-    animationController.update(app.ticker.deltaMS, {
-      ParamAngleX: state.headX,
-      ParamAngleY: state.headY,
-      ParamAngleZ: state.headX * -0.2,
-      ParamEyeBallX: state.eyeX,
-      ParamEyeBallY: state.eyeY,
-      ParamBreath: Math.sin(now / 1000) * 0.5 + 0.5,
+    const authoredPoseActive = motionController.isFullBodyMotion()
+      || !animationCoordinator.isProceduralEnabled();
+    proceduralAnimator.update(app.ticker.deltaMS, now, {
+      enabled: !authoredPoseActive,
+      working: animationCoordinator.isWorking(),
     });
 
     const ttsActive = ttsPlayer.isActive();
     const ttsLevel = ttsActive ? ttsPlayer.getMouthLevel() : 0;
 
-    if (state.ttsEnabled && ttsActive) {
+    if (!authoredPoseActive && state.ttsEnabled && ttsActive) {
       state.ttsMouth += (ttsLevel - state.ttsMouth) * 0.35;
-      core.setParameterValueById('ParamMouthOpenY', Math.min(1, state.ttsMouth * 5.0));
-    } else {
+      const mouthLevel = Math.min(1, state.ttsMouth * 5.0);
+      core.setParameterValueById(MK6_PARAMETER_IDS.mouthOpen, mouthLevel);
+      core.setParameterValueById(MK6_PARAMETER_IDS.jawOpen, mouthLevel * 0.72);
+    } else if (!authoredPoseActive) {
       state.ttsMouth *= 0.85;
       const idle = !state.ttsEnabled ? 0.03 : 0.04;
       state.mouthOpen += ((Math.sin(now / 700) * idle + idle) - state.mouthOpen) * 0.05;
-      core.setParameterValueById('ParamMouthOpenY', state.mouthOpen);
+      core.setParameterValueById(MK6_PARAMETER_IDS.mouthOpen, state.mouthOpen);
+      core.setParameterValueById(MK6_PARAMETER_IDS.jawOpen, state.mouthOpen * 0.35);
     }
 
-    if (state.autoBlink) {
+    if (state.autoBlink && !authoredPoseActive) {
       const blinkDur = 280;
       if (state.blinkPhase === 0 && now >= state.nextBlinkAt) {
         state.blinkPhase = 1; state.blinkStart = now;
@@ -507,8 +526,8 @@ async function main() {
           state.nextBlinkAt = now + 2000 + Math.random() * 3500;
         }
       }
-      core.setParameterValueById('ParamEyeLOpen', eyeOpen, 1);
-      core.setParameterValueById('ParamEyeROpen', eyeOpen, 1);
+      core.setParameterValueById(MK6_PARAMETER_IDS.eyeLeftOpen, eyeOpen, 1);
+      core.setParameterValueById(MK6_PARAMETER_IDS.eyeRightOpen, eyeOpen, 1);
     }
   });
 }

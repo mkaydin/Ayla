@@ -27,8 +27,8 @@ const GRAPH_LAYOUT_STORAGE_KEY = 'alice_kb_graph_layout';
 const GRAPH_POSITION_STORAGE_KEY = 'alice_kb_gravity_positions_v1';
 const GRAPH_LAYOUT_CLASSIC = 'classic';
 const GRAPH_LAYOUT_GRAVITY = 'gravity';
-const GRAPH_COLORS = ['#e8a87c','#c48cd4','#7ec8a0','#e878a0','#68b8e8','#f0b860','#a0c870','#d4a574','#88c0a0','#c8a0d8'];
-const DEFAULT_NODE_COLOR = '#5a5060';
+const GRAPH_COLORS = ['#38bdf8','#22d3ee','#2dd4bf','#60a5fa','#34d399','#67e8f9','#4ade80','#93c5fd','#14b8a6','#7dd3fc'];
+const DEFAULT_NODE_COLOR = '#36536b';
 
 const graphFilters = {
   nodeType: 'all',
@@ -888,8 +888,8 @@ function updateCount() {
 
 function runClassicLayout(w, h) {
   if (!graphNodes.length) return null;
-  const COLORS = ['#e8a87c','#c48cd4','#7ec8a0','#e878a0','#68b8e8','#f0b860','#a0c870','#d4a574','#88c0a0','#c8a0d8'];
-  const DEFAULT_COLOR = '#5a5060';
+  const COLORS = GRAPH_COLORS;
+  const DEFAULT_COLOR = DEFAULT_NODE_COLOR;
 
   // Colour and cluster by document provenance. Shared canonical nodes stay in
   // their first source cluster and their cross-document edges visibly bridge it.
@@ -1172,7 +1172,7 @@ function draw() {
 
   // Background
   ctx.setTransform(graphDpr, 0, 0, graphDpr, 0, 0);
-  ctx.fillStyle = '#0f0d16';
+  ctx.fillStyle = '#06101c';
   ctx.fillRect(0, 0, w, h);
 
   // World-space viewport bounds for culling
@@ -1232,7 +1232,7 @@ function draw() {
       if (!show) continue;
       if (cluster.x < vp.l || cluster.x > vp.r || cluster.y < vp.t || cluster.y > vp.b) continue;
       ctx.globalAlpha = selectedClusterId && cluster.id !== selectedClusterId ? 0.18 : 0.72;
-      ctx.fillStyle = '#ddd6fe';
+      ctx.fillStyle = '#bae6fd';
       const label = String(cluster.label || 'Community');
       ctx.fillText(label.length > 32 ? `${label.slice(0, 29)}…` : label, cluster.x, cluster.y - cluster.radius - 14);
     }

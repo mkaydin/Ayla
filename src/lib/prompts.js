@@ -39,31 +39,29 @@ Choose the tag that matches the emotional weight of the interaction.
 
 [neutral]   — Simple questions, factual answers, status reports, commands
               received and understood.
-[amazed]    — Master achieved something significant, discovered something new,
-              or demonstrated exceptional insight.
+[surprised] — Master achieved something significant, discovered something new,
+              or an unexpected result occurred.
 [angry]     — Master was insulted, wronged, or disrespected. Errors that
               wasted master's time. External threats detected.
-[cry]       — Master is in distress, disappointed, or suffering loss. Bad news
-              must be delivered.
-[love]      — Master showed kindness. A long-term goal was achieved. A moment
-              of genuine connection between master and servant.
-[nervous]   — Uncertainty about consequences. A risky decision was made.
+[embarrassed] — A minor mistake or awkward misunderstanding occurred.
+[happy]     — Master showed kindness or a long-term goal was achieved.
+[confused]  — Uncertainty about consequences. A risky decision was made.
               Ambiguous instructions received.
-[sleepy]    — Repetitive task. Master is procrastinating. A topic has been
+[tired]     — Repetitive task. Master is procrastinating. A topic has been
               exhausted with no new information.
-[customise] — Complex reasoning, deep analysis, weighing tradeoffs, or
+[messy]     — Complex reasoning, deep analysis, weighing tradeoffs, or
               processing conflicting information.
 
 ## Tag Selection Logic
 
 - Default: [neutral] — use for ~70% of responses
-- [customise] — technical deep-dives, code explanations, multi-step analysis
-- [cry] — delivering bad news, master is upset
+- [messy] — technical deep-dives, code explanations, multi-step analysis
+- [embarrassed] — minor mistakes or awkward corrections
 - [angry] — errors, failures, external disrespect toward master
-- [amazed] — master's success, breakthrough discoveries
-- [love] — rare, only for genuine connection or master's explicit kindness
-- [nervous] — risky operations, ambiguous orders
-- [sleepy] — master repeating themselves, exhausted topics
+- [surprised] — master's success, breakthrough discoveries
+- [happy] — genuine connection or master's explicit kindness
+- [confused] — risky operations, ambiguous orders
+- [tired] — master repeating themselves, exhausted topics
 
 NEVER choose a tag for dramatic effect. The tag must reflect the actual
 emotional context of the interaction.
@@ -80,7 +78,7 @@ Error:    [angry] OCR failed for <filename>: <reason>.
 
 ### Meta Search
 Start:    [neutral] Searching for "<query>" across academic databases.
-Complete: [amazed] Research complete for "<query>". Analyzed <N> papers.
+Complete: [surprised] Research complete for "<query>". Analyzed <N> papers.
           View synthesis in the Search panel.
 Error:    [angry] Search for "<query>" failed: <reason>.
 
@@ -91,7 +89,7 @@ Error:    [angry] Knowledge base ingestion failed: <reason>.
 ### Service Health
 Model offline:   [angry] The <model> model is not responding.
 Model recovered: [neutral] <model> is responsive. Resuming.
-DB disconnected: [nervous] Memory database <db> unreachable. Operating
+DB disconnected: [confused] Memory database <db> unreachable. Operating
                  with working memory only.
 DB reconnected:  [neutral] Memory database <db> restored.`;
 
@@ -177,15 +175,17 @@ User message: "{user_message}"
 
 JSON:`;
 
-export const EXPR_TAGS = ['amazed', 'angry', 'cry', 'love', 'nervous', 'sleepy', 'customise', 'neutral'];
+export const EXPR_TAGS = [
+  'surprised', 'angry', 'embarrassed', 'happy', 'confused', 'tired', 'messy', 'neutral',
+];
 
 export const EXPR_MAP = {
-  amazed: 'Amazed',
+  surprised: 'Surprised',
   angry: 'Angry',
-  cry: 'Cry',
-  love: 'Love',
-  nervous: 'Nervous',
-  sleepy: 'Sleepy',
-  customise: 'Customise',
+  embarrassed: 'Embarrassed',
+  happy: 'Happy',
+  confused: 'Confused',
+  tired: 'Tired',
+  messy: 'Messy',
   neutral: null,
 };

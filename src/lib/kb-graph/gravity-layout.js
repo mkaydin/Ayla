@@ -1,8 +1,8 @@
 import { fitClusterCircle } from './cluster-geometry.js';
 
 const CLUSTER_COLORS = [
-  '#a78bfa', '#60a5fa', '#34d399', '#f472b6', '#fbbf24',
-  '#22d3ee', '#fb7185', '#c084fc', '#4ade80', '#f97316',
+  '#38bdf8', '#22d3ee', '#2dd4bf', '#60a5fa', '#34d399',
+  '#67e8f9', '#4ade80', '#93c5fd', '#14b8a6', '#7dd3fc',
 ];
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));

@@ -1,4 +1,4 @@
-appId: com.alice.demoness.chromium
+appId: com.alice.ai-assistant.chromium
 productName: ALICE Chromium
 directories:
   output: release/electron

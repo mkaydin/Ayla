@@ -11,20 +11,33 @@ import {
 } from '../lib/ipc.js';
 import { RENDER_QUALITY } from '../lib/render-performance.js';
 import {
-  LIVE2D_ANIMATIONS,
-  LIVE2D_EXPRESSIONS,
-} from '../live2d/animation-catalog.js';
+  MK6_EXPRESSIONS,
+  MK6_MOTIONS,
+} from '../live2d/mk6-profile.js';
 
 const SERVICES = [
   { id: 'backend',   name: 'Rust Backend', url: null, backend: true },
   { id: 'ollama',    name: 'Ollama',      url: serviceHealthUrl('ollama', 'http://localhost:11434/api/tags'), parse: (r) => `${r.models?.length || '?'} models` },
   { id: 'surrealdb', name: 'SurrealDB',   url: serviceHealthUrl('surrealdb', 'http://127.0.0.1:8000/health'),      parse: () => 'http://127.0.0.1:8000' },
   { id: 'qdrant',    name: 'Qdrant',      url: serviceHealthUrl('qdrant', 'http://127.0.0.1:6333'),              parse: () => ':6334 (1024-dim)' },
-  { id: 'searxng',   name: 'SearXNG',     url: serviceHealthUrl('searxng', 'http://127.0.0.1:8888/search?q=test&format=json'), parse: () => '8 engines, :8888' },
+  { id: 'searxng',   name: 'SearXNG',     url: serviceHealthUrl('searxng', 'http://127.0.0.1:8888/healthz'),                  parse: () => 'healthy · :8888' },
   { id: 'lightpanda',name: 'Lightpanda',  url: serviceHealthUrl('lightpanda', 'http://127.0.0.1:9222/json/version'),  parse: () => 'CDP :9222' },
   { id: 'tts',       name: 'TTS',         url: null,                                  parse: () => 'Piper amy-low' },
   { id: 'embedding', name: 'Embedding',   url: null,                                  parse: () => 'qwen3-embedding:0.6b' },
 ];
+
+const serviceHealth = new Map();
+
+export function getServiceHealthSnapshot() {
+  return new Map(serviceHealth);
+}
+
+function reportServiceHealth(id, online) {
+  if (!id || typeof online !== 'boolean') return;
+  if (serviceHealth.get(id) === online) return;
+  serviceHealth.set(id, online);
+  events.emit('service-health', { id, online });
+}
 
 export function initStatusPanel() {
   const panel = createPanel('status', 'SYSTEM STATUS', {
@@ -71,6 +84,7 @@ function appendOptions(group, items, type) {
     const option = document.createElement('option');
     option.value = `${type}:${item.id}`;
     option.textContent = item.label;
+    option.dataset.label = item.label;
     group.appendChild(option);
   }
 }
@@ -82,25 +96,31 @@ function buildAnimationControls() {
   const label = document.createElement('label');
   label.className = 'status-animation-label';
   label.htmlFor = 'status-animation-select';
-  label.textContent = 'Animation';
+  label.textContent = 'Mk6 Motion / Expression';
 
   const select = document.createElement('select');
   select.id = 'status-animation-select';
   select.className = 'status-animation-select';
-  const procedural = document.createElement('optgroup');
-  procedural.label = 'Procedural animations';
-  appendOptions(procedural, LIVE2D_ANIMATIONS, 'animation');
-  const expressions = document.createElement('optgroup');
-  expressions.label = 'Existing expressions';
-  appendOptions(expressions, LIVE2D_EXPRESSIONS, 'expression');
-  select.append(procedural, expressions);
-
-  const loopLabel = document.createElement('label');
-  loopLabel.className = 'status-animation-loop';
-  const loopToggle = document.createElement('input');
-  loopToggle.type = 'checkbox';
-  loopToggle.id = 'status-animation-loop';
-  loopLabel.append(loopToggle, document.createTextNode('Loop'));
+  const motions = document.createElement('optgroup');
+  motions.label = 'Authored motions';
+  appendOptions(motions, MK6_MOTIONS, 'motion');
+  select.appendChild(motions);
+  const channelLabels = {
+    emotion: 'Emotions',
+    modifier: 'Modifiers',
+    indicator: 'Indicators',
+    appearance: 'Appearance',
+    prop: 'Props',
+    interaction: 'Interactions',
+  };
+  for (const [channel, channelLabel] of Object.entries(channelLabels)) {
+    const items = MK6_EXPRESSIONS.filter(item => item.channel === channel);
+    if (!items.length) continue;
+    const group = document.createElement('optgroup');
+    group.label = channelLabel;
+    appendOptions(group, items, 'expression');
+    select.appendChild(group);
+  }
 
   const play = document.createElement('button');
   play.type = 'button';
@@ -110,45 +130,61 @@ function buildAnimationControls() {
     const [type, id] = select.value.split(':', 2);
     if (!id) return;
     if (type === 'expression') {
-      events.emit('animation-stop', { transitionMs: 120 });
-      events.emit('expression-select', id);
+      events.emit('expression-toggle', id);
     } else {
-      events.emit('expression-select', null);
-      events.emit('animation-play', {
-        id,
-        loop: loopToggle.checked,
-        transitionMs: 180,
-      });
+      events.emit('motion-play', { id });
     }
     appendLog(
       'info',
-      `${type === 'expression' ? 'Expression' : 'Animation'}: ${select.selectedOptions[0]?.textContent || id}`,
+      `${type === 'expression' ? 'Expression layer toggled' : 'Animation'}: ${select.selectedOptions[0]?.dataset.label || id}`,
     );
   });
 
   const stop = document.createElement('button');
   stop.type = 'button';
   stop.className = 'status-ctrl-btn';
-  stop.textContent = '■ Stop';
+  stop.textContent = '■ Clear';
   stop.addEventListener('click', () => {
-    events.emit('animation-stop', { transitionMs: 160 });
-    events.emit('expression-select', null);
-    appendLog('info', 'Animation stopped');
+    events.emit('motion-stop');
+    events.emit('expression-clear-all');
+    appendLog('info', 'Mk6 motion and all expression layers cleared');
   });
 
-  const updateSelectionMode = () => {
-    const isExpression = select.value.startsWith('expression:');
-    loopToggle.disabled = isExpression;
-    loopLabel.classList.toggle('disabled', isExpression);
-    if (!isExpression) {
-      const id = select.value.slice('animation:'.length);
-      loopToggle.checked = LIVE2D_ANIMATIONS.find(item => item.id === id)?.loop ?? false;
-    }
-  };
-  select.addEventListener('change', updateSelectionMode);
-  updateSelectionMode();
+  const activeLayers = document.createElement('div');
+  activeLayers.className = 'status-animation-active';
+  activeLayers.textContent = 'Active layers: none';
 
-  container.append(label, select, loopLabel, play, stop);
+  const activityState = document.createElement('div');
+  activityState.className = 'status-animation-active';
+  activityState.textContent = 'Behavior: normal';
+  events.on('animation-state', value => {
+    const detail = value?.offline ? ` · ${value.offline} offline` : '';
+    activityState.textContent = `Behavior: ${value?.state || 'normal'}${detail}`;
+  });
+
+  const activeIds = new Set();
+  const updateActionLabel = () => {
+    const [type, id] = select.value.split(':', 2);
+    play.textContent = type === 'expression'
+      ? activeIds.has(id) ? '− Remove' : '＋ Add'
+      : '▶ Play';
+  };
+  select.addEventListener('change', updateActionLabel);
+  events.on('expression-state', active => {
+    activeIds.clear();
+    for (const item of active || []) activeIds.add(item.id);
+    for (const option of select.querySelectorAll('option[value^="expression:"]')) {
+      const id = option.value.slice('expression:'.length);
+      option.textContent = `${activeIds.has(id) ? '● ' : ''}${option.dataset.label}`;
+    }
+    activeLayers.textContent = active?.length
+      ? `Active layers: ${active.map(item => item.label).join(' · ')}`
+      : 'Active layers: none';
+    updateActionLabel();
+  });
+
+  container.append(label, select, play, stop, activityState, activeLayers);
+  updateActionLabel();
 }
 
 let lastBackendState = '';
@@ -203,6 +239,10 @@ function updateBackendStatus(status, logChange) {
     const type = state === 'ready' ? 'success' : state === 'failed' ? 'error' : 'info';
     const detail = status?.error && state === 'failed' ? `: ${status.error}` : '';
     appendLog(type, `Rust backend ${state}${detail}`);
+  }
+  if (state === 'ready') reportServiceHealth('backend', true);
+  else if (['failed', 'stopped', 'unavailable'].includes(state)) {
+    reportServiceHealth('backend', false);
   }
   lastBackendState = state;
 }
@@ -366,11 +406,14 @@ async function checkService(svc) {
       const label = svc.parse(await r.json().catch(() => ({})));
       const color = ms > 2000 ? 'yellow' : 'green';
       setServiceState(dot, bar, info, color, 100, label);
+      reportServiceHealth(svc.id, true);
     } else {
       setServiceState(dot, bar, info, 'yellow', 50, `HTTP ${r.status}`);
+      reportServiceHealth(svc.id, false);
     }
   } catch (e) {
     setServiceState(dot, bar, info, 'red', 20, 'offline');
+    reportServiceHealth(svc.id, false);
   }
 }
 

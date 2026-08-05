@@ -2,6 +2,7 @@ use std::collections::HashMap;
 #[cfg(debug_assertions)]
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
 
 const OLLAMA_MIN_AUTO_CTX: usize = 8_192;
 const OLLAMA_CONTEXT_BUCKETS: [usize; 5] = [8_192, 16_384, 32_768, 65_536, 131_072];
@@ -20,6 +21,11 @@ pub struct MemoryConfig {
     pub embed_model: String,
     pub llm_model: String,
     pub ollama_num_ctx: usize,
+    /// Total timeout for long Ollama generation requests. Zero disables the
+    /// total timeout while retaining a short connection timeout.
+    pub ollama_long_timeout_secs: usize,
+    /// Retry count for transient long-request transport/server failures.
+    pub ollama_transport_retries: usize,
     pub embed_dim: usize,
     pub top_k_retrieval: usize,
 }
@@ -110,6 +116,11 @@ impl Default for MemoryConfig {
             llm_model: env_or("gemma4:e4b", &["ALICE_LLM_MODEL"], &dotenv),
             // Treat this as the hardware-safe ceiling, not a target for every call.
             ollama_num_ctx: env_usize(32_768, &["ALICE_OLLAMA_NUM_CTX"], &dotenv),
+            // Long cloud generations can legitimately take much longer than five
+            // minutes. A zero default deliberately leaves them uncapped.
+            ollama_long_timeout_secs: env_usize(0, &["ALICE_OLLAMA_LONG_TIMEOUT_SECS"], &dotenv),
+            ollama_transport_retries: env_usize(3, &["ALICE_OLLAMA_TRANSPORT_RETRIES"], &dotenv)
+                .min(10),
             embed_dim: 1024,
             top_k_retrieval: 5,
         }
@@ -117,6 +128,20 @@ impl Default for MemoryConfig {
 }
 
 impl MemoryConfig {
+    /// Build a client for long-running LLM operations. Reqwest has no total
+    /// timeout unless one is explicitly configured, so zero means wait for the
+    /// model to finish. The connection timeout still fails quickly when Ollama
+    /// itself is unavailable.
+    pub fn long_ollama_client(&self) -> Result<reqwest::Client, reqwest::Error> {
+        let builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(15));
+        let builder = if self.ollama_long_timeout_secs == 0 {
+            builder
+        } else {
+            builder.timeout(Duration::from_secs(self.ollama_long_timeout_secs as u64))
+        };
+        builder.build()
+    }
+
     pub fn ollama_context_for(&self, input_bytes: usize, output_tokens: usize) -> usize {
         let input_tokens = input_bytes.div_ceil(APPROX_BYTES_PER_TOKEN);
         let safety_tokens = (input_tokens / 4).max(512);

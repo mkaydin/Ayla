@@ -317,8 +317,11 @@ Test: Tool Dispatch (requires Ollama)
 
 | Test | How | Expected |
 |------|-----|----------|
-| Model loaded | Page loads | DemonGirl visible on canvas |
-| Expressions | LLM response with [love], [angry], etc. | Face changes to match |
+| Model loaded | Page loads with `Mk6_1.0` installed | Mk6 visible on canvas |
+| Expressions | Use the status selector or receive an expression-tagged response | Authored Mk6 expression appears |
+| Layered expressions | Add Outfit, Tablet, Pen, then Happy in the status selector | All four remain active and visible; Active layers lists each one |
+| Expression conflicts | Add Tablet + Pen, then Tracking | Tracking replaces both arm props without clearing outfit/emotion layers |
+| Motions | Select Idle, Tracking Lost, or Sleep in status panel | Authored motion plays and can be stopped |
 | Breathing | Always | Subtle ParamBreath oscillation |
 | Blink | Periodic | Eyes close briefly every 2-5 seconds |
 | Mouse look | Move mouse | Eyes and head follow cursor |

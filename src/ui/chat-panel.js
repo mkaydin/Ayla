@@ -10,6 +10,7 @@ import { MarkdownSpeechStream, renderMarkdown } from '../lib/markdown.js';
 import { events } from '../lib/events.js';
 import { CORE_IDENTITY, EXPR_TAGS, EXPR_MAP } from '../lib/prompts.js';
 import { generateAliceResponse } from '../lib/alice-responses.js';
+import { notifyProcess } from '../lib/process-notify.js';
 
 export function initChatPanel(applyExpressionFn) {
   const panel = createPanel('chat', 'Chat', {
@@ -136,14 +137,24 @@ export function initChatPanel(applyExpressionFn) {
     // Build a combined text from all messages
     const text = msgs.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
     const source = activeSession.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+    const operationId = crypto.randomUUID();
+    const announcement = {
+      kind: 'document',
+      source: activeSession.title,
+      target: 'chat',
+      operationId,
+    };
 
     events.emit('status-log', { type: 'info', message: 'Extracting knowledge from chat session...' });
+    notifyProcess('start', 'kb-ingest', announcement);
     try {
       const result = await invoke('ingest_text', { text, source, sourceType: 'chat' });
       events.emit('status-log', { type: 'success', message: 'Chat KB: ' + result });
+      notifyProcess('complete', 'kb-ingest', announcement);
       events.emit('kb-refresh');
     } catch (e) {
       events.emit('status-log', { type: 'error', message: 'Chat KB failed: ' + e });
+      notifyProcess('error', 'kb-ingest', { ...announcement, reason: e.message || String(e) });
     }
   }
 
@@ -215,6 +226,8 @@ export function initChatPanel(applyExpressionFn) {
     sendBtn.title = 'Stop response';
     streaming = true;
     streamCancelRequested = false;
+    const responseAnimationId = `chat:${activeSession.id}`;
+    events.emit('chat-response-state', { id: responseAnimationId, active: true });
 
     // Enrich through the shared Rust backend when a desktop host is present.
     let systemPrompt = CORE_IDENTITY;
@@ -356,11 +369,14 @@ export function initChatPanel(applyExpressionFn) {
     } catch (e) {
       if (e.name === 'AbortError' || e.code === 'request_cancelled') {
         thinkDiv.textContent = '(cancelled)';
+        applyExpressionFn?.('Tired', 3_000);
       } else {
         thinkDiv.textContent = 'Error: ' + e.message;
         thinkDiv.style.color = '#f87171';
+        applyExpressionFn?.('Confused', 4_500);
       }
     } finally {
+      events.emit('chat-response-state', { id: responseAnimationId, active: false });
       streaming = false;
       streamOperation = null;
       streamCancelRequested = false;

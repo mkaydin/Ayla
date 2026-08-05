@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
 
 const CLEANUP_MAX_OUTPUT_TOKENS: usize = 8_192;
 const BATCH_NODE_COUNT: usize = 80;
@@ -104,10 +103,8 @@ pub struct GraphCleanupAnalyzer {
 
 impl GraphCleanupAnalyzer {
     pub fn new(config: MemoryConfig) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(300))
-            .connect_timeout(Duration::from_secs(5))
-            .build()
+        let client = config
+            .long_ollama_client()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self { config, client }
     }

@@ -33,6 +33,11 @@ tts/tts_piper_amy_en_model/*.onnx
 # Large binary files
 DemonGirl-UnzipThisFolder.zip
 
+# Licensed Mk6 Live2D source assets (installed locally, never packaged)
+/Mk6_1.0/
+/public/Mk6/
+/.mk6-cache/
+
 # Sherpa-ONNX (vendored dependency)
 /tts/sherpa-onnx
 

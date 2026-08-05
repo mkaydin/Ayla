@@ -240,8 +240,9 @@ if [ "$WARN_COUNT" -gt 0 ]; then
   log_info "$WARN_COUNT compiler warnings (non-blocking)"
 fi
 
-# Module presence (absolute paths — cwd was changed to src-tauri/ for cargo check above).
-for mod in "memory/mod.rs" "memory/config.rs" "memory/commands.rs" \
+# Shared backend module presence. Business logic moved to alice-core during the
+# Electron migration; src-tauri now contains only the thin host adapters.
+for mod in "memory/mod.rs" "config.rs" \
            "memory/conversation.rs" "memory/semantic.rs" "memory/graph.rs" \
            "memory/episodic.rs" "memory/embeddings.rs" "memory/extraction.rs" \
            "memory/summarizer.rs" "memory/consolidator.rs" "memory/retrieval.rs" \
@@ -250,12 +251,14 @@ for mod in "memory/mod.rs" "memory/config.rs" "memory/commands.rs" \
            "db/mod.rs" "db/surreal.rs" "db/qdrant.rs" \
            "tools/mod.rs" "tools/types.rs" "tools/ocr.rs" "tools/meta_search.rs" \
            "tools/quick_extract.rs"; do
-  if [ -f "$SCRIPT_DIR/src-tauri/src/$mod" ]; then
+  if [ -f "$SCRIPT_DIR/crates/alice-core/src/$mod" ]; then
     : # silent pass
   else
-    log_fail "Missing: $mod" "File was deleted"
+    log_fail "Missing alice-core module: $mod" "File was deleted"
   fi
 done
+[ -f "$SCRIPT_DIR/src-tauri/src/memory/commands.rs" ] \
+  || log_fail "Missing Tauri command adapter" "Check src-tauri/src/memory/commands.rs"
 
 # Check Tauri commands registered in lib.rs (issue I18: hardcoded count drifted to 11
 # while only 10 were actually checked). Now derive the count from lib.rs itself.
@@ -380,19 +383,23 @@ for pattern in "data/" "node_modules" "dist/" "src-tauri/target"; do
     || log_fail ".gitignore missing: $pattern" "Add to .gitignore"
 done
 
-# Live2D model files
-for model_file in "demongirl.model3.json" "demongirl.moc3" "demongirl.physics3.json"; do
-  if [ -f "$SCRIPT_DIR/public/DemonGirl/$model_file" ]; then
+# Licensed Live2D model files are installed locally and intentionally gitignored.
+LIVE2D_MODEL_DIR="${ALICE_LIVE2D_MODEL_DIR:-$SCRIPT_DIR/Mk6_1.0}"
+for model_file in "Mk6.model3.json" "Mk6.moc3" "Mk6.physics3.json"; do
+  if [ -f "$LIVE2D_MODEL_DIR/$model_file" ]; then
     : # silent
   else
-    log_fail "Missing Live2D: $model_file" "Check public/DemonGirl/"
+    log_fail "Missing Live2D: $model_file" "Install Mk6_1.0 or set ALICE_LIVE2D_MODEL_DIR"
   fi
 done
 
-# Expression files
-EXPR_COUNT=$(ls "$SCRIPT_DIR/public/DemonGirl/"*.exp3.json 2>/dev/null | wc -l)
-[ "$EXPR_COUNT" -ge 7 ] && log_pass "Live2D expressions: $EXPR_COUNT/7" \
-  || log_fail "Live2D expressions: $EXPR_COUNT/7" "Missing .exp3.json files"
+# Authored expressions and motions
+EXPR_COUNT=$(find "$LIVE2D_MODEL_DIR/Expressions" -maxdepth 1 -type f -name '*.exp3.json' 2>/dev/null | wc -l)
+MOTION_COUNT=$(find "$LIVE2D_MODEL_DIR/Motions" -maxdepth 1 -type f -name '*.motion3.json' 2>/dev/null | wc -l)
+[ "$EXPR_COUNT" -ge 21 ] && log_pass "Live2D expressions: $EXPR_COUNT/21" \
+  || log_fail "Live2D expressions: $EXPR_COUNT/21" "Missing Mk6 expression files"
+[ "$MOTION_COUNT" -ge 3 ] && log_pass "Live2D motions: $MOTION_COUNT/3" \
+  || log_fail "Live2D motions: $MOTION_COUNT/3" "Missing Mk6 motion files"
 
 # TTS model
 if [ -f "$SCRIPT_DIR/tts/tts_piper_amy_low/en_US-amy-low.onnx" ]; then

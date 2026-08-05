@@ -35,6 +35,17 @@ const iconPath = join(
 );
 app.setName('ALICE');
 
+function findLocalModelDirectory() {
+  const candidates = [
+    process.env.ALICE_LIVE2D_MODEL_DIR,
+    join(process.cwd(), 'Mk6_1.0'),
+    join(projectDirectory, 'Mk6_1.0'),
+    join(dirname(app.getPath('exe')), 'Mk6_1.0'),
+    join(app.getPath('userData'), 'Mk6_1.0'),
+  ].filter(Boolean);
+  return candidates.find(candidate => existsSync(join(candidate, 'Mk6.model3.json'))) || null;
+}
+
 let applicationWindow = null;
 let staticServer = null;
 let sidecar = null;
@@ -277,7 +288,11 @@ async function createWindow() {
     if (!existsSync(join(distDirectory, 'index.html'))) {
       throw new Error('Electron production assets are missing. Run `npm run build` first.');
     }
-    if (!staticServer) staticServer = await startStaticServer(distDirectory);
+    if (!staticServer) {
+      staticServer = await startStaticServer(distDirectory, {
+        modelDirectory: findLocalModelDirectory(),
+      });
+    }
     trustedOrigin = staticServer.origin;
   }
 
@@ -287,7 +302,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#100f18',
+    backgroundColor: '#07111e',
     icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {

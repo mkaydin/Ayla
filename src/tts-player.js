@@ -15,6 +15,7 @@ export class TtsPlayer {
     this.playing = false;
     this.mouthData = null;
     this._muted = false;
+    this._stateListeners = new Set();
   }
 
   async init() {
@@ -47,6 +48,7 @@ export class TtsPlayer {
   enqueue(wavBytes) {
     if (!this.ctx) return;
     this.queue.push(new Uint8Array(wavBytes));
+    this._emitState(true);
     if (!this.playing) this._playNext();
   }
 
@@ -55,6 +57,7 @@ export class TtsPlayer {
     this.playing = false;
     try { this.source?.stop(); } catch (e) {}
     this.source = null;
+    this._emitState(false);
   }
 
   isActive() { return this.playing; }
@@ -70,9 +73,19 @@ export class TtsPlayer {
     return Math.sqrt(sum / this.mouthData.length);
   }
 
+  onStateChange(listener) {
+    this._stateListeners.add(listener);
+    return () => this._stateListeners.delete(listener);
+  }
+
   async _playNext() {
-    if (this.queue.length === 0) { this.playing = false; return; }
+    if (this.queue.length === 0) {
+      this.playing = false;
+      this._emitState(false);
+      return;
+    }
     this.playing = true;
+    this._emitState(true);
     const bytes = this.queue.shift();
 
     try {
@@ -88,5 +101,9 @@ export class TtsPlayer {
       console.warn('TTS decode failed', e);
       this._playNext();
     }
+  }
+
+  _emitState(active) {
+    for (const listener of this._stateListeners) listener(Boolean(active));
   }
 }

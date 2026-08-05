@@ -79,7 +79,7 @@ pub fn read_file_content(path: &str) -> Result<String, String> {
             crate::protocol_io::with_stdout_suppressed(|| {
                 pdf_extract::extract_text_from_mem(&bytes)
             })
-                .map_err(|e| format!("PDF text extract: {}", e))
+            .map_err(|e| format!("PDF text extract: {}", e))
         }
         "docx" => extract_docx(&path),
         _ => {

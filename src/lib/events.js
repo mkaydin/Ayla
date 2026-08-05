@@ -17,7 +17,16 @@ class AppEvents {
   }
 
   emit(event, data) {
-    (this._listeners.get(event) || []).forEach((cb) => cb(data));
+    for (const callback of this._listeners.get(event) || []) {
+      try {
+        callback(data);
+      } catch (error) {
+        // Animation, notification, and status observers are ancillary. A UI
+        // listener must never turn a completed backend operation into a false
+        // Search/OCR/KB failure.
+        console.error(`Event listener '${event}' failed:`, error);
+      }
+    }
   }
 }
 

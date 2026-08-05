@@ -891,7 +891,10 @@ resources/
 └── tts/tts_piper_amy_low/
 ```
 
-The Live2D model remains in the Vite `dist/` payload.
+The licensed Mk6 Live2D model must not enter the Vite or Electron payload. Mount
+it read-only from `ALICE_LIVE2D_MODEL_DIR`, a `Mk6_1.0` directory beside the
+executable, or the application-data directory. Package only the runtime adapter
+and application icon derived from the user-provided source asset.
 
 Configure `electron-builder` with `extraResources` for binaries and the TTS model.
 The backend and helper binaries must retain executable permissions in AppImage

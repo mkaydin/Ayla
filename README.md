@@ -1,14 +1,14 @@
 # ALICE — Local AI Assistant with Knowledge Memory
 
-A local-first desktop AI assistant featuring an interactive **Live2D "Demon Girl" avatar** named Alice. Type messages, and the avatar responds with synthesized speech while animating facial expressions, lip sync, blinking, and head tracking. Alice remembers conversations, documents, and research in a persistent knowledge graph.
+A local-first desktop AI assistant featuring an interactive **Live2D avatar** named Alice. Type messages, and the avatar responds with synthesized speech while animating authored expressions and motions, lip sync, blinking, and head tracking. Alice remembers conversations, documents, and research in a persistent knowledge graph.
 
-AI inference and memory run locally. Literature search and the current Live2D Cubism bootstrap require network access. During the production migration, both Tauri and Electron/Chromium use the same Tauri-free Rust core. Electron communicates with it through a private MessagePack sidecar and is the intended production desktop target after parity testing.
+AI inference and memory run locally. The licensed Mk6 Live2D assets are installed separately and are never committed or bundled automatically. During the production migration, both Tauri and Electron/Chromium use the same Tauri-free Rust core. Electron communicates with it through a private MessagePack sidecar and is the intended production desktop target after parity testing.
 
 ## Features
 
 - **Streaming chat** — local LLM via Ollama (`gemma4:e4b`), streaming token-by-token with markdown rendering
 - **Text-to-Speech** — Piper VITS voice synthesis with audio-timed lip sync, toggleable mute
-- **Live2D avatar** — 7 expressions driven by LLM response tags, eye tracking, breathing, procedural blink
+- **Live2D avatar** — 21 composable authored expressions, 3 authored motions, LLM/process reactions, eye tracking, breathing, and procedural blink
 - **Multi-panel UI** — draggable, resizable, minimizable panels for chat, OCR, search, knowledge base
 - **Persistent memory** — knowledge graph (Petgraph + SurrealDB), vector search (Qdrant), facts and episodes
 - **Memory pipeline** — LLM entity/fact/relation extraction, summarization, importance scoring, embedding
@@ -92,6 +92,10 @@ git clone <repo-url> && cd Alice_AI_Demoness
 
 # 2. Install dependencies
 npm install
+
+# Install the licensed avatar locally (this directory is gitignored), or point
+# ALICE_LIVE2D_MODEL_DIR at an equivalent Mk6 model directory.
+# ./Mk6_1.0/Mk6.model3.json must exist before starting the UI.
 
 # 3. Pull Ollama models
 ollama pull gemma4:e4b
@@ -238,11 +242,12 @@ production cutover gates in `ELECTRON_RUST_MIGRATION_PLAN.md`.
 │   ├── settings.yml               # 8 search engines configured
 │   └── limiter.toml               # Rate-limiting for local network
 │
-├── public/DemonGirl/              # Live2D Cubism 4 model files
-│   ├── demongirl.model3.json
-│   ├── demongirl.moc3
-│   ├── demongirl.physics3.json
-│   └── *.exp3.json                # 7 expression files
+├── Mk6_1.0/                       # Licensed Live2D assets (local + gitignored)
+│   ├── Mk6.model3.json
+│   ├── Mk6.moc3
+│   ├── Mk6.physics3.json
+│   ├── Expressions/               # 21 authored expressions
+│   └── Motions/                   # idle, tracking-lost, sleep
 │
 ├── models/                        # ONNX models (downloaded separately)
 ├── tts/tts_piper_amy_low/         # TTS voice model (~63 MB)
@@ -345,6 +350,12 @@ in bounded chunks, uses schema-constrained typed entities and relations,
 performs an adaptive relation-completion pass, then merges and deduplicates the
 results. If Ollama still reports a CUDA out-of-memory error, extraction retries
 once at 16,384.
+
+Long extraction, graph-analysis, and knowledge-writing requests have no total
+HTTP timeout by default, which avoids discarding slow cloud/local generations.
+Set `ALICE_OLLAMA_LONG_TIMEOUT_SECS` to a positive number only when a hard limit
+is desired. Extraction retries transient transport and server failures three
+times by default; configure this with `ALICE_OLLAMA_TRANSPORT_RETRIES` (0-10).
 
 ## Configuration
 

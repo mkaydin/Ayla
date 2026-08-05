@@ -48,10 +48,8 @@ pub async fn write_general_knowledge_document(
         prompt.len(),
         num_ctx
     );
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(300))
-        .build()
+    let client = config
+        .long_ollama_client()
         .map_err(|error| format!("Knowledge writer client: {error}"))?;
     let response = client
         .post(format!("{}/api/chat", config.ollama_url))

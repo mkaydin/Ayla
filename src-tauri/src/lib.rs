@@ -1,5 +1,6 @@
 mod db;
 mod event_sink;
+mod live2d;
 mod memory;
 mod processes;
 mod tools;
@@ -43,6 +44,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            live2d::read_live2d_asset,
             tts::generate_tts,
             tts::stop_tts,
             memory::commands::enrich_prompt,
