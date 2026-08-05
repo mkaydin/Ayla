@@ -15,7 +15,7 @@ const target = `PhaseFourTarget${diagnosticId.replaceAll('-', '').slice(12, 24)}
 const text = [
   `# Phase 4 Live Diagnostic`,
   `${entity} is connected to ${target} through the relation validates_desktop_parity.`,
-  `${target} is a unique temporary concept used only by the ALICE Phase 4 diagnostic.`,
+  `${target} is a unique temporary concept used only by the Ayla Phase 4 diagnostic.`,
 ].join('\n\n');
 const manager = new SidecarManager({
   binaryPath: developmentSidecarPath(root),

@@ -1,7 +1,13 @@
-# ALICE — Complete System Architecture & Implementation Plan
+# Ayla — Historical System Architecture & Implementation Plan
+
+> This is the original planning baseline and retains some former Alice-era
+> names and examples for traceability. The active product identity is **Ayla**,
+> a collaborative AI coworker and research partner—not a demoness or servant.
+> Runtime behavior is defined by `src/lib/prompts.js`; current architecture and
+> features are documented in `README.md`.
 
 **Target:** Tauri 2 Desktop App (Rust + vanilla JS), fully offline, local-only.
-**Character:** Alice — demoness, information gatherer, loyal companion.
+**Current character:** Ayla — AI coworker, information gatherer, and research partner.
 **Goal:** A persistent, self-learning AI assistant with multi-panel UI, document processing, literature search, knowledge graph, and memory.
 
 ---

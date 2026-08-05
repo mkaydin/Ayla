@@ -9,7 +9,7 @@ import {
 import { MarkdownSpeechStream, renderMarkdown } from '../lib/markdown.js';
 import { events } from '../lib/events.js';
 import { CORE_IDENTITY, EXPR_TAGS, EXPR_MAP } from '../lib/prompts.js';
-import { generateAliceResponse } from '../lib/alice-responses.js';
+import { generateAylaResponse } from '../lib/ayla-responses.js';
 import { notifyProcess } from '../lib/process-notify.js';
 
 export function initChatPanel(applyExpressionFn) {
@@ -38,7 +38,7 @@ export function initChatPanel(applyExpressionFn) {
       <div class="chat-messages-area">
         <div class="chat-messages" id="chat-messages"></div>
         <div class="chat-input-row">
-          <textarea class="chat-input" id="chat-input" placeholder="Ask Alice..." rows="1"></textarea>
+          <textarea class="chat-input" id="chat-input" placeholder="Ask Ayla..." rows="1"></textarea>
           <button class="chat-send-btn" id="chat-send-btn">\u2191</button>
         </div>
       </div>
@@ -193,8 +193,8 @@ export function initChatPanel(applyExpressionFn) {
 
   // Strip expression tag from text, return the display content and expression.
   function stripTag(text) {
-    const m = text.match(/^\[(amazed|angry|cry|love|nervous|sleepy|customise|neutral)\]\s*/i);
-    if (m) {
+    const m = text.match(/^\[([a-z]+)\]\s*/i);
+    if (m && EXPR_TAGS.includes(m[1].toLowerCase())) {
       const exprName = EXPR_MAP[m[1].toLowerCase()];
       const stripped = text.slice(m[0].length);
       return { displayText: stripped, exprName };
@@ -329,8 +329,8 @@ export function initChatPanel(applyExpressionFn) {
 
       // Handle any remaining tag (non-streaming or final response)
       if (!tagDone) {
-        const m = raw.match(/^\[(amazed|angry|cry|love|nervous|sleepy|customise|neutral)\]\s*/i);
-        if (m) {
+        const m = raw.match(/^\[([a-z]+)\]\s*/i);
+        if (m && EXPR_TAGS.includes(m[1].toLowerCase())) {
           if (!exprApplied && applyExpressionFn) {
             const exprName = EXPR_MAP[m[1].toLowerCase()];
             if (exprName) applyExpressionFn(exprName);
@@ -390,7 +390,7 @@ export function initChatPanel(applyExpressionFn) {
 
   // Listen for process notifications → inject system messages
   events.on('process-notify', ({ phase, process, data }) => {
-    const msg = generateAliceResponse(phase, process, data);
+    const msg = generateAylaResponse(phase, process, data);
     if (msg) {
       // Strip tag from system messages too
       const { displayText } = stripTag(msg);

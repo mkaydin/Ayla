@@ -76,7 +76,7 @@ pub async fn read_live2d_asset(
     }
 
     Err(
-        "Mk6 model is unavailable. Install Mk6_1.0, set ALICE_LIVE2D_MODEL_DIR, or copy it to the ALICE app-data directory."
+        "Mk6 model is unavailable. Install Mk6_1.0, set ALICE_LIVE2D_MODEL_DIR, or copy it to the Ayla app-data directory."
             .into(),
     )
 }

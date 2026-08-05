@@ -57,7 +57,7 @@ try {
   }
 
   const ingestResult = await manager.request('ingest_text', {
-    text: 'ALICE sidecar diagnostic document.',
+    text: 'Ayla sidecar diagnostic document.',
     source: 'sidecar-diagnostic.md',
     sourceType: 'diagnostic',
   });

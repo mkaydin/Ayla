@@ -78,7 +78,7 @@ export function augmentMk6Manifest(source, manifestUrl = MK6_MODEL_URL) {
     TrackingLost: [{ File: 'Motions/idle_trackinglost.motion3.json', FadeInTime: 0.4, FadeOutTime: 0.4 }],
     Sleep: [{ File: 'Motions/Sleep.motion3.json', FadeInTime: 0.8, FadeOutTime: 0.8 }],
   };
-  // Mk6 ships empty groups. ALICE owns blink and TTS explicitly, so retaining
+  // Mk6 ships empty groups. Ayla owns blink and TTS explicitly, so retaining
   // empty groups prevents Cubism's automatic layers from fighting the mixer.
   manifest.Groups = [
     { Target: 'Parameter', Name: 'EyeBlink', Ids: [] },
@@ -155,7 +155,7 @@ async function expressionDataFromFetch(fetchImpl) {
 }
 
 function disableNativeExpressions(manifest) {
-  // The Cubism expression manager has one global slot. ALICE mixes the same
+  // The Cubism expression manager has one global slot. Ayla mixes the same
   // authored parameters by independent semantic slots instead.
   manifest.FileReferences.Expressions = [];
   return manifest;

@@ -1561,11 +1561,11 @@ mod tests {
     fn dto_serialization_preserves_frontend_field_names() {
         let data = KnowledgeBaseData {
             nodes: vec![KnowledgeNode {
-                name: "alice".into(),
+                name: "ayla".into(),
                 node_type: "Person".into(),
                 source: "profile.md".into(),
                 sources: vec!["profile.md".into()],
-                aliases: vec!["alice demoness".into()],
+                aliases: vec!["ayla coworker assistant".into()],
                 meaning: "The assistant persona.".into(),
                 created: "2026-07-30T00:00:00Z".into(),
             }],

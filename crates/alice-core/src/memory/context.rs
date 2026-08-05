@@ -15,11 +15,11 @@ impl ContextBuilder {
             || !context.related_entities.is_empty()
         {
             prompt.push_str("## Current Context\n\n");
-            prompt.push_str("The following information is relevant to master's query. Use it where applicable. Do not repeat it verbatim unless asked.\n\n");
+            prompt.push_str("The following information is relevant to the user's query. Use it where applicable. Do not repeat it verbatim unless asked.\n\n");
         }
 
         if !context.related_facts.is_empty() {
-            prompt.push_str("### Master's Facts\n");
+            prompt.push_str("### User Facts\n");
             for fact in &context.related_facts {
                 prompt.push_str(&format!("- {}\n", fact));
             }

@@ -1,4 +1,9 @@
-# Prompts & Character Design — Alice the Demoness
+# Archived Prompt Design — Former Alice Persona
+
+> **Archived:** This document records the superseded pre-Ayla prompt and early
+> TTS design. Its demoness/master persona and code samples are not runtime
+> requirements. The active character contract is Ayla the AI coworker, defined
+> in `src/lib/prompts.js` and summarized in `README.md`.
 
 ---
 

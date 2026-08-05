@@ -17,7 +17,7 @@ impl OcrTool {
     }
 
     fn find_binary() -> PathBuf {
-        // CARGO_MANIFEST_DIR = .../Alice_AI_Demoness/crates/alice-core/
+        // CARGO_MANIFEST_DIR = .../Ayla/crates/alice-core/
         // Go up to the workspace parent, then to the sibling helper project.
         let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let external = base.join("../../../ocr_helper_system/target/release/ocr-helper");

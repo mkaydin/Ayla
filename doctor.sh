@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ───────────────────────────────────────────────────────────
-# ALICE System Doctor — comprehensive system health check
+# Ayla System Doctor — comprehensive system health check
 # Usage: bash doctor.sh [--quick] [--no-docker] [--no-ollama]
 # ───────────────────────────────────────────────────────────
 set -euo pipefail
@@ -313,7 +313,7 @@ done
 JS_MODULES=(
   "src/lib/ipc.js" "src/lib/markdown.js" "src/lib/drag-resize.js" \
   "src/lib/events.js" "src/lib/prompts.js" "src/lib/process-notify.js" \
-  "src/lib/alice-responses.js" \
+  "src/lib/ayla-responses.js" \
   "src/ui/panel-system.js" "src/ui/status-panel.js" "src/ui/chat-panel.js" \
   "src/ui/ocr-panel.js" "src/ui/search-panel.js" "src/ui/kb-panel.js" \
   "src/ui/sidebar.js" \
@@ -329,11 +329,11 @@ done
 [ -f "$SCRIPT_DIR/index.html" ] && log_pass "index.html found" \
   || log_fail "index.html missing"
 
-# Check Alice prompt in prompts.js
-if grep -q "ALICE.*demoness" "$SCRIPT_DIR/src/lib/prompts.js" 2>/dev/null; then
-  log_pass "Alice identity prompt present"
+# Check Ayla prompt in prompts.js
+if grep -q "AYLA.*AI coworker" "$SCRIPT_DIR/src/lib/prompts.js" 2>/dev/null; then
+  log_pass "Ayla coworker identity prompt present"
 else
-  log_fail "Alice identity prompt missing" "Check src/lib/prompts.js"
+  log_fail "Ayla identity prompt missing" "Check src/lib/prompts.js"
 fi
 
 # Package.json deps
@@ -519,7 +519,7 @@ if [ "$QUICK" = false ] && [ "$NO_OLLAMA" = false ]; then
     # Entity extraction test (quick)
     log_info "Testing entity extraction..."
     ENTITIES=$(curl -sf --max-time 20 http://localhost:11434/api/chat \
-      -d '{"model":"gemma4:e4b","messages":[{"role":"user","content":"Extract entities from: master uses Rust and Tauri.\nOutput ONLY a JSON array."}],"stream":false,"options":{"temperature":0,"num_predict":128}}' \
+      -d '{"model":"gemma4:e4b","messages":[{"role":"user","content":"Extract entities from: the user works with Rust and Tauri.\nOutput ONLY a JSON array."}],"stream":false,"options":{"temperature":0,"num_predict":128}}' \
       2>/dev/null | jq -r '.message.content' 2>/dev/null || echo "")
     if echo "$ENTITIES" | grep -q "Rust"; then
       log_pass "Entity extraction — found 'Rust'"

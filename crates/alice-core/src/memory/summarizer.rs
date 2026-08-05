@@ -29,7 +29,7 @@ impl Summarizer {
         let prompt = format!(
             "Summarize this conversation exchange in 1-2 sentences. Be factual and concise.\
              Only output the summary, nothing else.\n\n\
-             Master: {}\nAlice: {}\n\nSummary:",
+             User: {}\nAyla: {}\n\nSummary:",
             user_msg, assistant_msg
         );
         self.ask_llm(&prompt, 256).await
@@ -40,7 +40,7 @@ impl Summarizer {
         let joined = messages.join("\n");
         let prompt = format!(
             "Summarize this full conversation session into a paragraph for memory.\
-             Include: what master wanted, what was discussed, what was decided,\
+             Include: what the user wanted, what was discussed, what was decided,\
              and any actions taken. Keep it factual.\n\n\
              Conversation:\n{}\n\nSession summary:",
             joined
@@ -59,7 +59,7 @@ impl Summarizer {
              emotional significance (+0.2), technical facts (+0.2).\
              Small talk is 0.0-0.1.\n\n\
              Return ONLY a number like 0.7\n\n\
-             Master: {}\nAlice: {}\n\nImportance:",
+             User: {}\nAyla: {}\n\nImportance:",
             user_msg, assistant_msg
         );
         let response = self.ask_llm(&prompt, 16).await?;

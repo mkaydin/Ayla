@@ -60,7 +60,7 @@ fn main() {
         speed: 1.0,
         ..Default::default()
     };
-    let text = "Hello master! fufu~";
+    let text = "Hello! Ayla is ready to work with you.";
     eprintln!("Generating: \"{}\"", text);
 
     let start2 = Instant::now();

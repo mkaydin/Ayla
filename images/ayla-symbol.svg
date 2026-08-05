@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title description">
+  <title id="title">Ayla symbol</title>
+  <desc id="description">A blue letter A joined to a small knowledge graph.</desc>
+  <defs>
+    <linearGradient id="background" x1="22" y1="18" x2="139" y2="143" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#183651"/>
+      <stop offset="1" stop-color="#08131f"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="39" y1="126" x2="122" y2="35" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#19c6ff"/>
+      <stop offset="1" stop-color="#8de8ff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="5" y="5" width="150" height="150" rx="38" fill="url(#background)" stroke="#245372" stroke-width="2"/>
+  <path d="M37 124 72 37c2-6 11-6 14 0l36 87" fill="none" stroke="url(#accent)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M52 91h55" fill="none" stroke="url(#accent)" stroke-width="9" stroke-linecap="round"/>
+
+  <g fill="none" stroke="#4ad7ff" stroke-width="2.5" opacity=".9">
+    <path d="m86 43 31-17 22 21-13 30"/>
+    <path d="m117 26 9 51-19 14"/>
+    <path d="m139 47-32 44"/>
+  </g>
+  <g fill="#8de8ff" filter="url(#glow)">
+    <circle cx="117" cy="26" r="5"/>
+    <circle cx="139" cy="47" r="5"/>
+    <circle cx="126" cy="77" r="5"/>
+    <circle cx="107" cy="91" r="4"/>
+  </g>
+  <circle cx="80" cy="80" r="73" fill="none" stroke="#4ad7ff" stroke-width="1" opacity=".16"/>
+</svg>

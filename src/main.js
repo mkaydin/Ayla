@@ -1,4 +1,4 @@
-// ── ALICE — Main Bootstrap ─────────────────────────────────
+// ── Ayla — Main Bootstrap ──────────────────────────────────
 
 import { Application, ShaderSystem, Ticker } from 'pixi.js';
 import { install as installCspSafeShaders } from '@pixi/unsafe-eval';

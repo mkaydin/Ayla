@@ -1,4 +1,4 @@
-# ALICE — System Test Plan
+# Ayla — System Test Plan
 
 ## Pre-Flight Checks
 
@@ -338,7 +338,7 @@ Test: Tool Dispatch (requires Ollama)
 ```
 1. Start app: npm run tauri dev
 2. Status panel shows green dots for available services
-3. Type "Hello Alice" in chat, press Enter
+3. Type "Hello Ayla" in chat, press Enter
 4. Wait for streaming response
 5. Verify: Response has [expression_tag], markdown renders, TTS speaks, mouth moves
 6. Verify: Status log shows chat activity
@@ -351,11 +351,11 @@ Test: Tool Dispatch (requires Ollama)
 1. Send: "Remember that I use Rust for all my projects"
 2. Wait for response
 3. Send: "What programming language do I use?"
-4. Verify: Alice recalls "Rust" from memory context (once enrichment is wired with DB)
+4. Verify: Ayla recalls "Rust" from memory context (once enrichment is wired with DB)
 5. Send: "Remember I also like Python for scripting"
 6. Wait for response
 7. Send: "What languages do I use?"
-8. Verify: Alice mentions both Rust and Python
+8. Verify: Ayla mentions both Rust and Python
 ```
 
 ### Flow 3: Multisession Chat

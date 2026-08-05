@@ -1,5 +1,5 @@
-appId: com.alice.ai-assistant.chromium
-productName: ALICE Chromium
+appId: com.ayla.coworker.chromium
+productName: Ayla
 directories:
   output: release/electron
 files:
@@ -30,8 +30,8 @@ electronLanguages:
   - en-US
 linux:
   category: Utility
-  executableName: alice-chromium
-  maintainer: ALICE Project <noreply@localhost>
+  executableName: ayla
+  maintainer: Ayla Project <noreply@localhost>
   syncDesktopName: true
   icon: electron/assets/icon.png
   target:

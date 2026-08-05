@@ -1,15 +1,15 @@
 {
-  "name": "alice-ai-assistant",
+  "name": "ayla-ai-assistant",
   "version": "0.1.0",
-  "description": "ALICE local AI assistant with a Live2D interface and persistent knowledge memory",
+  "description": "Ayla local AI coworker with a Live2D interface and persistent knowledge memory",
   "author": {
-    "name": "ALICE Project",
+    "name": "Ayla Project",
     "email": "noreply@localhost"
   },
   "private": true,
   "type": "module",
   "main": "electron/main.mjs",
-  "desktopName": "com.alice.demoness.chromium",
+  "desktopName": "com.ayla.coworker.chromium",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

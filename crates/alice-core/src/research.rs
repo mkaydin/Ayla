@@ -242,7 +242,7 @@ pub async fn gather_knowledge_with_searxng(
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(18))
         .redirect(reqwest::redirect::Policy::limited(6))
-        .user_agent("Alice-Knowledge-Gatherer/1.0")
+        .user_agent("Ayla-Knowledge-Gatherer/1.0")
         .build()
         .map_err(|error| format!("Knowledge search client: {error}"))?;
     let queries = [

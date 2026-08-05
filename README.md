@@ -1,472 +1,384 @@
-# ALICE — Local AI Assistant with Knowledge Memory
+<p align="center">
+  <img src="images/ayla-symbol.svg" width="150" height="150" alt="Ayla symbol">
+</p>
 
-A local-first desktop AI assistant featuring an interactive **Live2D avatar** named Alice. Type messages, and the avatar responds with synthesized speech while animating authored expressions and motions, lip sync, blinking, and head tracking. Alice remembers conversations, documents, and research in a persistent knowledge graph.
+<h1 align="center">Ayla</h1>
 
-AI inference and memory run locally. The licensed Mk6 Live2D assets are installed separately and are never committed or bundled automatically. During the production migration, both Tauri and Electron/Chromium use the same Tauri-free Rust core. Electron communicates with it through a private MessagePack sidecar and is the intended production desktop target after parity testing.
+<p align="center"><strong>Local AI Coworker with Knowledge Memory</strong></p>
 
-## Features
+Ayla is a desktop AI coworker for conversation, research, document processing,
+and long-term knowledge management. The interface combines a responsive Live2D
+avatar with streaming chat, speech, OCR, meta-search, and a persistent knowledge
+graph.
 
-- **Streaming chat** — local LLM via Ollama (`gemma4:e4b`), streaming token-by-token with markdown rendering
-- **Text-to-Speech** — Piper VITS voice synthesis with audio-timed lip sync, toggleable mute
-- **Live2D avatar** — 21 composable authored expressions, 3 authored motions, LLM/process reactions, eye tracking, breathing, and procedural blink
-- **Multi-panel UI** — draggable, resizable, minimizable panels for chat, OCR, search, knowledge base
-- **Persistent memory** — knowledge graph (Petgraph + SurrealDB), vector search (Qdrant), facts and episodes
-- **Memory pipeline** — LLM entity/fact/relation extraction, summarization, importance scoring, embedding
-- **Memory consolidation** — periodic deduplication, pruning, and reinforcement of stored knowledge
-- **Document ingestion** — PDF OCR via `deepseek-ocr`, result preview, approve-to-knowledge-base flow
-- **Literature search** — meta-search across Google Scholar, arXiv, PubMed, Semantic Scholar, and more
-- **Service health dashboard** — live status of Ollama, SurrealDB, Qdrant, SearXNG, Lightpanda, TTS, embedding model
-- **System doctor** — `doctor.sh` script for automated health checks across all services
-- **Local AI stack** — chat, embeddings, speech, and memory stay on the machine
+Ayla is presented as a capable colleague and research partner—not a demon,
+servant, or roleplay character. Her runtime prompt emphasizes collaboration,
+accuracy, user agency, useful initiative, and honest uncertainty.
+
+Electron/Chromium is the primary high-performance desktop target. The Tauri
+build remains available as a compatibility/reference host, and both use the
+same Tauri-independent Rust backend.
+
+## Screenshots
+
+<p align="center">
+  <img src="images/Screenshot_20260805_095628.png" alt="Ayla streaming a technical chat response beside the Live2D coworker avatar" width="100%">
+</p>
+
+<p align="center"><em>Streaming technical chat with persistent sessions, rich Markdown, process-aware Live2D posing, and the service dashboard.</em></p>
+
+| Research and knowledge gathering | Knowledge graph analysis |
+|---|---|
+| <img src="images/Screenshot_20260804_233734.png" alt="Ayla presenting a generated knowledge document and downloaded scientific papers" width="100%"> | <img src="images/Screenshot_20260805_094301.png" alt="Ayla analyzing communities in the knowledge graph" width="100%"> |
+| General-knowledge synthesis, scientific PDFs, provenance, and KB approval. | Community/gravity graph view with incremental AI analysis and progress. |
+
+| Persistent Meta Search | Document processing |
+|---|---|
+| <img src="images/Screenshot_20260805_100158.png" alt="Ayla Meta Search mode selection and persistent topic history" width="100%"> | <img src="images/Screenshot_20260805_100119.png" alt="Ayla document processor rendering extracted structured content" width="100%"> |
+| General knowledge and scientific-paper modes with stored topic history. | Quick Extract/OCR results rendered for review before KB ingestion. |
+
+<p align="center">
+  <img src="images/Screenshot_20260805_095446.png" alt="Ayla showing a completed research result and downloaded paper processing controls" width="100%">
+</p>
+
+<p align="center"><em>Completed research retained in SurrealDB with downloaded-document Quick Extract and OCR actions.</em></p>
+
+## Highlights
+
+- **Streaming Ollama chat** with cancellable responses and selectable local or
+  cloud models, including `gemma4:e4b` and `nemotron-3-super:cloud`.
+- **Rich Markdown** rendered safely with DOMPurify, KaTeX mathematics, tables,
+  links, and Highlight.js syntax coloring for a broad range of languages.
+- **Partial-stream TTS** using Sherpa-ONNX/Piper. Ayla begins speaking complete
+  prose segments before the LLM response finishes, while Markdown markers,
+  code, equations, and tables are filtered from speech.
+- **Process announcements and desktop notifications** for search, Quick
+  Extract, OCR, knowledge ingestion, and graph analysis. Electron notifications
+  include a KDE-compatible `notify-send` fallback on Linux.
+- **Live2D Mk6 avatar** with cursor tracking, breathing, blinking, lip sync,
+  authored expressions, idle/sleep/service-loss states, and tablet/pen process
+  poses coordinated with chat and background work.
+- **Adaptive rendering** with framebuffer pixel budgets, quality modes,
+  resize-time throttling, visibility culling, and worker-assisted knowledge
+  graph layout for smooth ultrawide/fullscreen Electron use.
+- **Persistent memory** across conversations, episodes, semantic facts,
+  documents, embeddings, and entity-relation knowledge.
+- **Knowledge extraction** with automatic context sizing, bounded document
+  chunks, relation-completion passes, JSON recovery, transient Ollama retries,
+  and no default timeout for long generations.
+- **Knowledge graph tools** with classic and community/gravity views,
+  provenance-aware clusters, selected-neighbour highlighting, incremental AI
+  cleanup, duplicate merging, node renaming/meaning improvement, deterministic
+  relation normalization, checkpoints, and resume support.
+- **Document lifecycle safety**: graph creation/deletion controls are kept out
+  of the Graph tab. Deleting a document from Files removes only that source's
+  vectors and graph provenance; shared knowledge survives while another source
+  still supports it.
+- **Meta Search** for general knowledge documents or scientific papers, backed
+  by SearXNG and Lightpanda, with persistent topic history, downloaded PDFs,
+  extracted/OCR text, reports, and knowledge-base ingestion state in SurrealDB.
+- **Quick Extract and OCR** for uploaded or downloaded documents, with preview,
+  persistence, approval, progress reporting, and long-running request support.
 
 ## Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
-│                 Shared Vite/PixiJS Frontend                  │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │  panel-system   chat-panel    ocr-panel   search-panel  │ │
-│  │  kb-panel       status-panel  sidebar                   │ │
-│  └──────────────────┬──────────────────────┬───────────────┘ │
-└─────────────────────┼──────────────────────┼─────────────────┘
-                      │                      │
-              ┌───────▼────────┐    ┌────────▼─────────┐
-              │ Tauri WebView  │    │ Electron/Chromium│
-              │ thin adapters  │    │ secure preload   │
-              └───────┬────────┘    └────────┬─────────┘
-                      │                      │ private framed
-                      │                      │ MessagePack IPC
-                      │             ┌────────▼─────────┐
-                      │             │ Rust sidecar     │
-                      │             │ alice-sidecar    │
-                      │             └────────┬─────────┘
-              ┌───────▼──────────────────────▼─────────┐
-              │ alice-core: memory / DB / tools / TTS  │
-              └──────────────────┬─────────────────────┘
-                                 │
-    ┌────────────────────────────┼─────────────────────┐
-    │                            │                     │
-┌───▼──────┐  ┌───────────▼──────┐  ┌──────────▼──────────┐
-│ SurrealDB│  │     Qdrant       │  │  Ollama :11434      │
-│  :8000   │  │   :6333/6334     │  │  gemma4:e4b (chat)  │
-│ (struct) │  │   (vectors)      │  │  qwen3-embedding    │
-└──────────┘  └──────────────────┘  │  deepseek-ocr (PDF) │
-                                    └─────────────────────┘
-    ┌─────────────────────┐
-    │ SearXNG    :8888    │  ← meta-search (8 engines)
-    │ Lightpanda :9222    │  ← JS page rendering
-    └─────────────────────┘
+│ Shared Vite frontend                                        │
+│ Panels · PixiJS/Live2D · Markdown/KaTeX · TTS queue         │
+└──────────────────────┬──────────────────────┬────────────────┘
+                       │                      │
+             ┌─────────▼─────────┐  ┌────────▼──────────────┐
+             │ Tauri 2 reference│  │ Electron 41/Chromium │
+             │ thin command host│  │ sandboxed preload     │
+             └─────────┬─────────┘  └────────┬──────────────┘
+                       │           private framed MessagePack
+                       │          ┌──────────▼──────────────┐
+                       │          │ Rust sidecar           │
+                       │          └──────────┬──────────────┘
+             ┌─────────▼─────────────────────▼──────────────┐
+             │ Shared Rust core                            │
+             │ memory · DB · OCR/search · graph · TTS      │
+             └──────┬────────────┬─────────────┬────────────┘
+                    │            │             │
+               SurrealDB      Qdrant        Ollama
+               structured     vectors       chat/embed/OCR
+
+             SearXNG + Lightpanda → web and paper research
 ```
 
-### Tech Stack
+The Electron page has no Node.js access. Electron main validates IPC commands,
+owns the Rust sidecar, restricts navigation and external links, and forwards
+versioned requests, events, streaming deltas, structured errors, cancellation,
+and binary audio over private pipes.
+
+### Technology
 
 | Layer | Technology |
 |---|---|
-| Desktop framework | Electron 41/Chromium migration target + temporary Tauri 2 reference host |
-| Frontend | Vanilla JS (ES modules), Vite 5 |
-| 2D rendering | PixiJS 6 + pixi-live2d-display (Cubism 4) |
-| LLM backend | Ollama (`gemma4:e4b`) |
-| Embedding model | `qwen3-embedding:0.6b` (1024-dim) |
-| Text-to-Speech | Sherpa-ONNX Piper VITS ("amy-low") |
-| Structured memory | SurrealDB (conversations, facts, episodes, graph) |
-| Vector memory | Qdrant (semantic search) |
-| Knowledge graph | Petgraph (in-memory) + SurrealDB (persistence) |
-| Literature search | SearXNG (8 engines) + Lightpanda (JS render) |
-| Markdown rendering | marked |
+| Primary desktop host | Electron 41 / Chromium |
+| Reference desktop host | Tauri 2 |
+| Frontend | Vanilla JavaScript modules, Vite 5 |
+| Avatar rendering | PixiJS 6, pixi-live2d-display, Cubism 4 |
+| Markdown | marked, DOMPurify, KaTeX, Highlight.js |
+| Rust backend | `alice-core` plus `alice-sidecar` compatibility crate names |
+| LLM and embeddings | Ollama, configurable text model, `qwen3-embedding:0.6b` |
+| Text-to-speech | Sherpa-ONNX Piper VITS (`amy-low`) |
+| Structured storage | SurrealDB |
+| Vector storage | Qdrant |
+| Graph | Petgraph with SurrealDB persistence |
+| Search | SearXNG, Lightpanda, external Meta Search helper |
 
-## Prerequisites
+## Requirements
 
-- **Rust** (1.77+) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Node.js** (18+) — for Vite and npm packages
-- **Docker** — for SurrealDB, Qdrant, SearXNG, Lightpanda containers
-- **Ollama** — `ollama serve`
-- **Tauri system dependencies**:
-  - Arch: `sudo pacman -S webkit2gtk-4.1 libappindicator-gtk3`
-  - Debian/Ubuntu: `sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev`
+- Rust 1.77.2 or newer
+- Node.js 22 LTS or newer recommended
+- Docker with Compose
+- Ollama
+- Linux, Windows, or macOS for Electron
+- Tauri platform dependencies only when building the reference Tauri host
+
+The Mk6 Live2D model is licensed separately. Its source directory is gitignored
+and is not redistributed by this repository.
 
 ## Quick Start
 
 ```bash
-# 1. Clone
-git clone <repo-url> && cd Alice_AI_Demoness
+# Clone the renamed repository.
+git clone <repo-url> Ayla
+cd Ayla
 
-# 2. Install dependencies
 npm install
 
-# Install the licensed avatar locally (this directory is gitignored), or point
-# ALICE_LIVE2D_MODEL_DIR at an equivalent Mk6 model directory.
-# ./Mk6_1.0/Mk6.model3.json must exist before starting the UI.
-
-# 3. Pull Ollama models
-ollama pull gemma4:e4b
-
-# Optional: use a different Ollama model for chat, extraction, summarization,
-# graph cleanup, and Meta Search. Leave ALICE_LLM_MODEL unset for Gemma.
-# ALICE_LLM_MODEL=nemotron-3-super:cloud
-ollama pull qwen3-embedding:0.6b
-ollama pull deepseek-ocr       # optional — for PDF OCR
-
-# 4. Download TTS model
-mkdir -p tts/tts_piper_amy_low
-curl -L -o /tmp/amy-low.tar.bz2 \
-  https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2
-curl -L -o /tmp/espeak-ng-data.tar.bz2 \
-  https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2
-tar -xjf /tmp/amy-low.tar.bz2 -C tts/tts_piper_amy_low/ --strip-components=1
-tar -xjf /tmp/espeak-ng-data.tar.bz2 -C tts/tts_piper_amy_low/
-
-# 5. Create local credentials, then start Docker services
+# Create local service credentials. Replace both placeholder secrets.
 cp .env.example .env
-# Replace both placeholder secrets in .env (generate each with: openssl rand -hex 32)
-docker compose up -d
-# → SurrealDB :8000, Qdrant :6333/6334, SearXNG :8888, Lightpanda :9222
+# Generate a secret with: openssl rand -hex 32
 
-# 6. Verify system health
+# Install the standard local models.
+ollama pull gemma4:e4b
+ollama pull qwen3-embedding:0.6b
+ollama pull deepseek-ocr          # optional, used for PDF OCR
+
+# Start persistent/search services.
+docker compose up -d
+
+# Verify the environment.
 bash doctor.sh
 
-# 7. Build external tools (optional — for OCR and meta-search)
-(cd ../ocr_helper_system && cargo build --release)
-(cd ../meta_search_Js_render && cargo build --release)
-
-# 8a. Run the Tauri reference application
-npm run tauri dev
-
-# 8b. Run Electron/Chromium with the Rust sidecar
+# Primary desktop build.
 npm run electron:dev
 ```
 
-## Desktop Targets
+Install the licensed avatar as `Mk6_1.0/Mk6.model3.json`, or point
+`ALICE_LIVE2D_MODEL_DIR` at its directory. The `ALICE_*` environment prefix is
+retained as a backward-compatible configuration API; it does not represent the
+current Ayla product identity.
 
-Both desktop targets use the same `index.html`, Vite bundle, panel UI, PixiJS renderer, Live2D model, and `alice-core` business implementation. Tauri remains available as the reference host while Electron parity and packaging are completed:
+Optional external helpers can be built from sibling repositories:
 
 ```bash
-npm run tauri dev          # Reference host + shared Rust core
-npm run electron:dev       # Build sidecar, start Vite, and run Chromium
-npm run electron:start     # Build sidecar and run against an existing dist/
-npm run sidecar:diagnostic # Headless Electron-main ↔ Rust protocol diagnostic
-npm run sidecar:diagnostic:live # Read-only smoke test against local services/data
-npm run sidecar:diagnostic:mutations # Reversible SurrealDB write/read/delete test
-npm run sidecar:diagnostic:features # Reversible live chat/TTS/search-cancel/KB test
-npm run sidecar:diagnostic:ocr # Real OCR test using ALICE_OCR_FIXTURE or smallest downloaded PDF
-npm run electron:stage     # Validate and stage sidecar + OCR/search helpers
-npm run electron:pack      # Unpacked Electron application
-npm run electron:build     # Linux AppImage + deb in release/electron/
+(cd ../ocr_helper_system && cargo build --release)
+(cd ../meta_search_Js_render && cargo build --release)
 ```
 
-The Electron target uses a sandboxed preload, context isolation, blocked Node.js access in the page, external-link isolation, and a loopback production server. Electron main owns `alice-sidecar`, validates its versioned handshake and command allowlist, and transports requests, progress events, chat streams, structured errors, and binary WAV data over private stdin/stdout pipes.
+## Running and Building
 
-All 29 Rust commands have sidecar dispatcher routes. The Electron package
-contains the Rust sidecar, OCR helper, Meta Search helper, and Piper resources;
-the staging command fails with an actionable error if any required executable
-is missing. Full Ollama/OCR/search workflow parity remains part of the
-production cutover gates in `ELECTRON_RUST_MIGRATION_PLAN.md`.
+```bash
+npm run electron:dev              # Vite + debug Rust sidecar + Electron
+npm run electron:start            # Electron against an existing dist/
+npm run electron:stage            # Build and stage production resources
+npm run electron:pack             # Unpacked production application
+npm run electron:build            # AppImage and deb packages
 
-## Project Structure
+npm run tauri dev                 # Reference Tauri host
+npm run tauri build               # Reference Tauri packages
 
-```
-├── index.html                     # Minimal DOM scaffolding (canvas + CSS links)
-├── docker-compose.yml             # SurrealDB, Qdrant, SearXNG, Lightpanda containers
-├── doctor.sh                      # Automated system health checker
-├── vite.config.js                 # Vite config (Ollama API proxy)
-├── package.json                   # JS dependencies
-├── electron-builder.yml           # Electron Linux packaging
-├── electron/                      # Chromium main/preload/dev/static-server target
-├── MASTER_PLAN.md                 # Full architecture & implementation plan
-├── TEST_PLAN.md                   # Manual test matrix & performance benchmarks
-│
-├── src/                           # Frontend (vanilla JavaScript, ES modules)
-│   ├── main.js                    # Bootstrap: PixiJS, Live2D model, animation loop
-│   ├── tts-player.js              # Web Audio TTS queue + mute + mouth extraction
-│   ├── lib/                       # Shared utilities (7 files)
-│   │   ├── ipc.js                 # Tauri IPC + PDF opener
-│   │   ├── markdown.js            # marked renderer (code copy, external links)
-│   │   ├── drag-resize.js         # Panel drag + resize primitives
-│   │   ├── events.js              # App-wide pub/sub event bus
-│   │   ├── prompts.js             # Alice identity + 9 LLM prompt templates
-│   │   ├── process-notify.js      # Background process status formatting
-│   │   └── alice-responses.js     # Alice's auto-generated process messages
-│   └── ui/                        # Panel modules (7 files)
-│       ├── panel-system.js        # Draggable/resizable/minimizable panel framework
-│       ├── status-panel.js        # 7-service health dashboard + log feed
-│       ├── chat-panel.js          # Chat with markdown, session sidebar, streaming
-│       ├── ocr-panel.js           # PDF upload → queue → preview → approve
-│       ├── search-panel.js        # Meta-search progress → report → PDF list
-│       ├── kb-panel.js            # Canvas graph viz + nodes/edges/files tables
-│       └── sidebar.js             # Right-edge panel toggle buttons + shortcuts
-│
-├── styles/                        # CSS — design tokens + per-panel styles (9 files)
-│   ├── tokens.css                 # 50+ CSS custom properties
-│   ├── panel.css                  # Panel chrome, resize, minimize/maximize
-│   ├── scrollbar.css              # Global scrollbar styling
-│   ├── status.css                 # Service indicators, log feed
-│   ├── chat.css                   # Bubbles, sidebar, markdown styling
-│   ├── ocr.css                    # Upload zone, queue, preview
-│   ├── search.css                 # Progress log, paper cards
-│   ├── kb.css                     # Graph canvas, tables, tabs
-│   └── sidebar.css                # Toggle button bar
-│
-├── src-tauri/                     # Rust backend
-│   ├── Cargo.toml                 # 15 crate dependencies
-│   ├── tauri.conf.json            # Tauri window & bundle config
-│   └── src/
-│       ├── main.rs                # Entry point (Wayland/X11 env vars)
-│       ├── lib.rs                 # App setup, 12 Tauri commands, plugins
-│       ├── tts.rs                 # Piper VITS TTS engine + commands
-│       ├── memory/                # Memory subsystem (15 modules)
-│       │   ├── mod.rs             # MemoryManager orchestrator + periodic consolidation
-│       │   ├── config.rs          # MemoryConfig (URLs, model names)
-│       │   ├── commands.rs        # 10 Tauri IPC commands
-│       │   ├── working.rs         # Layer 1: Working memory (RAM, VecDeque)
-│       │   ├── conversation.rs    # Layer 2: Conversation CRUD (SurrealDB)
-│       │   ├── episodic.rs        # Layer 3: Episode store (SurrealDB + Qdrant)
-│       │   ├── semantic.rs        # Layer 4: Facts/preferences (SurrealDB)
-│       │   ├── graph.rs           # Layer 5: Petgraph knowledge graph
-│       │   ├── embeddings.rs      # Ollama qwen3-embedding client
-│       │   ├── extraction.rs      # LLM entity/fact/relation extraction
-│       │   ├── summarizer.rs      # LLM turn summarization + importance scoring
-│       │   ├── consolidator.rs    # Merge duplicates, prune, reinforce
-│       │   ├── retrieval.rs       # Hybrid retrieval (graph + semantic + vector)
-│       │   ├── context.rs         # Context builder: memory → prompt prefix
-│       │   ├── pipeline.rs        # End-to-end: summarize → extract → store → embed
-│       │   └── ingestion.rs       # Tool results → memory pipeline bridge
-│       ├── db/                    # Database client wrappers (2 files)
-│       │   ├── surreal.rs         # SurrealDB connect + CRUD
-│       │   └── qdrant.rs          # Qdrant connect + upsert + search
-│       └── tools/                 # External tool integration (4 files)
-│           ├── mod.rs             # ToolRegistry + IngestTool trait + dispatch
-│           ├── types.rs           # IngestionResult, Fact, Relation
-│           ├── ocr.rs             # ocr-helper subprocess wrapper
-│           └── meta_search.rs     # meta_search subprocess wrapper
-│
-├── searxng/                       # SearXNG config
-│   ├── settings.yml               # 8 search engines configured
-│   └── limiter.toml               # Rate-limiting for local network
-│
-├── Mk6_1.0/                       # Licensed Live2D assets (local + gitignored)
-│   ├── Mk6.model3.json
-│   ├── Mk6.moc3
-│   ├── Mk6.physics3.json
-│   ├── Expressions/               # 21 authored expressions
-│   └── Motions/                   # idle, tracking-lost, sleep
-│
-├── models/                        # ONNX models (downloaded separately)
-├── tts/tts_piper_amy_low/         # TTS voice model (~63 MB)
-└── data/                          # Docker persistent volumes (gitignored)
+npm run test                      # JavaScript unit tests
+npm run build                     # Frontend production build
+npm run check                     # JavaScript tests + frontend build
 ```
 
-## Services & Ports
+Rust/Electron diagnostics:
 
-| Port | Service | Purpose |
-|------|---------|---------|
-| 8000 | SurrealDB | Structured memory (facts, conversations, graph persistence) |
-| 6333/6334 | Qdrant | Vector search (semantic/embedding memory) |
-| 8888 | SearXNG | Multi-engine academic search (8 engines) |
-| 9222 | Lightpanda | Headless JS page rendering (CDP) |
-| 11434 | Ollama | LLM inference + embedding generation |
-
-## Tauri IPC Commands
-
-| Command | Direction | Purpose |
-|---------|-----------|---------|
-| `enrich_prompt` | JS → Rust | Inject memory context into system prompt before LLM call |
-| `process_turn` | JS → Rust | Run memory pipeline after assistant response |
-| `process_message` | JS → Rust | Combined: tool dispatch + prompt enrichment |
-| `stream_chat` | JS ↔ Rust | Stream Ollama chat without a development proxy |
-| `get_kb_data` | JS → Rust | Retrieve all knowledge graph nodes and edges |
-| `analyze_and_merge_kb` | JS → Rust | LLM entity resolution, transactional node merge, and edge rewiring |
-| `run_ocr` | JS → Rust | Execute OCR on a PDF file |
-| `run_search` | JS → Rust | Execute knowledge-document or scientific-paper gathering |
-| `get_search_history` | JS → Rust | Load persistent topics, reports, and document processing state |
-| `get_search_document_content` | JS → Rust | Lazily load a stored Quick Extract/OCR result |
-| `save_search_document_result` | JS → Rust | Persist processed document text and metadata in SurrealDB |
-| `ingest_text` | JS → Rust | Feed arbitrary text into the memory pipeline |
-| `run_consolidation` | JS → Rust | Manually trigger memory consolidation |
-| `generate_tts` | JS → Rust | Generate speech audio from text |
-| `stop_tts` | JS → Rust | Stop in-progress TTS playback |
-
-Knowledge graph nodes and edges are read-only in the UI. The Graph tab packs
-document provenance groups and unowned relation components into separate,
-non-overlapping clusters. **AI Analyze & Improve** inspects all nodes and
-relations, merges only ≥0.90-confidence duplicate identities, clarifies unclear
-node names and meanings, and normalizes relation labels without changing their
-direction or claims. Sources are preserved while affected edges are rewired and
-deduplicated. Analysis is incremental: completed node meanings are skipped,
-safe relation formatting happens locally, duplicate checks use candidate groups,
-and resumable batches run two-at-a-time for Ollama cloud models (one-at-a-time
-for local models). Selecting a node highlights its neighbours and animates its
-direct relations. Deleting an approved document from the
-Files tab removes its vectors and only that document's node/edge provenance;
-shared merged knowledge remains until its final source is deleted.
-
-## Memory Layers
-
-| Layer | Purpose | Storage | Lifetime |
-|-------|---------|---------|----------|
-| 1. Working | Current conversation context | RAM (VecDeque) | Session |
-| 2. Conversation | Full message history | SurrealDB | Persistent |
-| 3. Episodic | Important events | SurrealDB + Qdrant vectors | Persistent |
-| 4. Semantic | Facts about user | SurrealDB | Persistent |
-| 5. Knowledge Graph | Entity-relation graph | Petgraph (RAM) + SurrealDB sync | Persistent |
-| 6. Vector | Semantic embeddings | Qdrant | Persistent |
-
-### Memory Pipeline
-
+```bash
+npm run sidecar:diagnostic
+npm run sidecar:diagnostic:live
+npm run sidecar:diagnostic:mutations
+npm run sidecar:diagnostic:features
+npm run sidecar:diagnostic:ocr
 ```
-User message → Assistant response
-        │
-        ▼
-  process_turn()
-        │
-        ├── 1. Save to conversation store (SurrealDB)
-        ├── 2. LLM summarization (gemma4:e4b)
-        ├── 3. Entity extraction → graph nodes (Petgraph)
-        ├── 4. Fact extraction → semantic store (SurrealDB)
-        ├── 5. Relation extraction → graph edges (Petgraph)
-        ├── 6. Importance scoring → episodic store if > 0.4
-        ├── 7. Embedding → Qdrant vector store
-        └── 8. Graph sync → SurrealDB
-```
-
-### Memory Consolidation (every 30 minutes)
-
-- **Merge duplicates** — identical facts merged, counts summed, confidence averaged
-- **Prune stale** — facts below confidence threshold with no recent updates removed
-- **Reinforce** — frequently observed facts get confidence boost
-
-## Ollama Models
-
-| Model | Size | Purpose |
-|-------|------|---------|
-| `gemma4:e4b` | 9.6 GB | Chat, entity/fact/relation extraction, summarization |
-| `qwen3-embedding:0.6b` | 639 MB | Embedding generation (1024-dim vectors) |
-| `deepseek-ocr` | ~6.7 GB | PDF page OCR (optional) |
-
-`ALICE_OLLAMA_NUM_CTX` sets the hardware-safe maximum context (32,768 by
-default for an 8 GB GPU). Each Gemma request automatically selects an 8K, 16K,
-or 32K context from its serialized input size, output allowance, and safety
-headroom. The model's advertised 131K maximum should not be used by default
-because its KV cache can exhaust VRAM. Knowledge extraction processes documents
-in bounded chunks, uses schema-constrained typed entities and relations,
-performs an adaptive relation-completion pass, then merges and deduplicates the
-results. If Ollama still reports a CUDA out-of-memory error, extraction retries
-once at 16,384.
-
-Long extraction, graph-analysis, and knowledge-writing requests have no total
-HTTP timeout by default, which avoids discarding slow cloud/local generations.
-Set `ALICE_OLLAMA_LONG_TIMEOUT_SECS` to a positive number only when a hard limit
-is desired. Extraction retries transient transport and server failures three
-times by default; configure this with `ALICE_OLLAMA_TRANSPORT_RETRIES` (0-10).
 
 ## Configuration
 
-### Render performance
+Copy `.env.example` to `.env`. Important settings include:
 
-Pixi and the KB canvas automatically choose a framebuffer resolution from the
-window size and a pixel budget instead of rendering every fullscreen pixel at
-the display's full device-pixel ratio. The System Status panel shows live FPS,
-resolution, and megapixels; its **Render** button cycles between Auto, Quality,
-and Performance. Live window resize temporarily uses a lower resolution and
-30 FPS, then restores the selected quality and a 60 FPS cap after resizing.
+| Setting | Purpose |
+|---|---|
+| `SURREAL_USER`, `SURREAL_PASS` | SurrealDB credentials |
+| `SEARXNG_SECRET` | SearXNG session signing secret |
+| `SEARXNG_URL` | SearXNG endpoint |
+| `ALICE_LLM_MODEL` | Ollama text model; legacy variable name retained |
+| `ALICE_EMBED_MODEL` | Ollama embedding model |
+| `ALICE_OLLAMA_NUM_CTX` | Hardware-safe maximum context window |
+| `ALICE_OLLAMA_LONG_TIMEOUT_SECS` | Long LLM timeout; `0` disables it |
+| `ALICE_OLLAMA_TRANSPORT_RETRIES` | Transient extraction retry count, 0–10 |
+| `ALICE_LIVE2D_MODEL_DIR` | Licensed Mk6 model directory |
+| `ALICE_OCR_BIN`, `ALICE_SEARCH_BIN` | Optional external helper overrides |
 
-### Chat model
+Context is selected automatically from the serialized prompt and requested
+output budget, up to `ALICE_OLLAMA_NUM_CTX`. Do not set the ceiling to the
+model's advertised maximum unless the available RAM/VRAM can support its KV
+cache. Long extraction, graph analysis, and knowledge writing have no total
+HTTP timeout by default. Temporary transport errors, rate limits, and common
+5xx responses are retried without discarding chunks completed during the active
+ingestion.
 
-Set in `src/ui/chat-panel.js`, `chatSendMessage()`:
-```js
-body: JSON.stringify({ model: 'gemma4:e4b', stream: true, messages, ... })
-```
+## Ayla's Character and Expression Contract
 
-### System prompt
+The active character prompt lives in `src/lib/prompts.js` as `CORE_IDENTITY`.
+Ayla is defined as a trusted coworker and research partner:
 
-Alice's identity and behavior rules are defined in `src/lib/prompts.js` as `CORE_IDENTITY`. Expression tags, extraction prompts, and all LLM templates are in that file.
+- collaborative rather than obedient or submissive;
+- concise, factual, and transparent about uncertainty;
+- proactive about relevant risks and next steps;
+- respectful of user agency and task boundaries;
+- careful with private and persistent memory;
+- warm when appropriate without performative roleplay.
 
-### TTS speed
+Every chat response begins internally with one expression tag. The UI consumes
+the tag, applies the matching Live2D expression, and excludes it from visible
+Markdown and TTS output.
 
-In `src-tauri/src/tts.rs`:
-```rust
-tts_config.speed = 1.10;  // 1.0 = normal, 1.10 = slightly faster
-```
+| Tag | Typical use |
+|---|---|
+| `[neutral]` | Normal answers, status, straightforward work |
+| `[messy]` | Deep analysis, complex tradeoffs, conflicting evidence |
+| `[surprised]` | Meaningful success or unexpected discovery |
+| `[happy]` | Shared milestone, relief, genuine warmth |
+| `[embarrassed]` | Ayla made a minor mistake or correction |
+| `[confused]` | Ambiguity, uncertainty, failed dependency, risky outcome |
+| `[angry]` | Serious preventable failure or credible threat; used rarely |
+| `[tired]` | Long-running/repetitive work reaching a natural pause |
 
-### Window size
-
-In `src-tauri/tauri.conf.json`:
-```json
-"width": 1280, "height": 800
-```
-
-### Memory config
-
-In `src-tauri/src/memory/config.rs` — all DB URLs, model names, embedding dimensions, and retrieval settings.
-
-## Alice — Character Identity
-
-Alice is a demoness bound to her master's service — serious, obedient, and precise. She does not roleplay or use cute language. Every response starts with an expression tag that drives the Live2D avatar:
-
-| Tag | Expression | Use |
-|-----|-----------|-----|
-| `[neutral]` | (reset) | Default, factual answers, status reports |
-| `[amazed]` | Amazed | Master's achievement, breakthrough |
-| `[angry]` | Angry | Errors, failures, external disrespect |
-| `[cry]` | Cry | Master distressed, bad news |
-| `[love]` | Love | Genuine connection (rare) |
-| `[nervous]` | Nervous | Uncertainty, risky operations |
-| `[sleepy]` | Sleepy | Repetitive topics, exhausted |
-| `[customise]` | Customise | Deep analysis, technical explanations |
+Process state is separate from expression state. Sleep mode activates after
+user inactivity only when no background job is running. Chat responses use the
+tablet pose; OCR, search, ingestion, and graph analysis use the tablet-and-pen
+working pose. Expressions fade and are cleared across sleep/wake transitions.
 
 ## Panels
 
-| Panel | Shortcut | Function |
-|-------|----------|----------|
-| System Status | (fixed top-left) | 7-service health dashboard, log feed, TTS/Blink/Look toggles |
-| Chat | Ctrl+C | Markdown chat with session sidebar (new/delete/switch) |
-| OCR | Ctrl+O | PDF upload → extraction → preview → approve to KB |
-| Meta Search | Ctrl+S | Knowledge-document or scientific-PDF gathering → Quick Extract/OCR → KB |
-| Knowledge Base | Ctrl+K | Canvas force graph + nodes/edges/files tables + CRUD |
+| Panel | Shortcut | Purpose |
+|---|---:|---|
+| System Status | — | Service health, FPS/render data, logs, TTS and notification controls |
+| Chat | Ctrl+C | Streaming chat, sessions, Markdown/math/code, partial TTS, send-to-KB |
+| OCR | Ctrl+O | Upload, Quick Extract/OCR, preview, persistence, KB approval |
+| Meta Search | Ctrl+S | General knowledge or scientific papers, history, processing, ingestion |
+| Knowledge Base | Ctrl+K | Graph views, community navigation, AI cleanup, node/edge/file inspection |
 
-Knowledge-document mode uses the app's native SearXNG general search, bounded
-public-page text gathering, and automatic-context Ollama writer. If public
-general engines are temporarily suspended, it retains SearXNG infobox evidence
-and supplements it with science-category results without downloading papers.
-Scientific-PDF mode uses the external `meta_search` binary and inventories its
-download directory in SurrealDB.
+Panels are draggable, resizable, minimizable, and persisted between launches.
 
-All panels are draggable, resizable, minimizable, and persist position across restarts.
+## Knowledge and Memory
+
+| Layer | Storage | Purpose |
+|---|---|---|
+| Working memory | RAM | Current conversation context |
+| Conversation memory | SurrealDB | Chat sessions and messages |
+| Episodic memory | SurrealDB + Qdrant | Important past events |
+| Semantic memory | SurrealDB | Facts and preferences |
+| Knowledge graph | Petgraph + SurrealDB | Entities, meanings, relations, provenance |
+| Document vectors | Qdrant | Semantic document retrieval |
+
+The ingestion pipeline stores source text, selects an Ollama context, extracts
+entities/facts/relations in bounded chunks, performs relation completion when a
+chunk is fragmented, merges duplicate output, embeds document chunks, updates
+memory stores, and synchronizes a bounded graph snapshot to SurrealDB.
+
+AI graph cleanup first performs deterministic local normalization, then sends
+only unresolved nodes, relation labels, and plausible duplicate candidates to
+the LLM. Cloud models may run two batches concurrently; local models remain
+sequential. Completed batches are checkpointed and can resume.
+
+## Search and Documents
+
+Meta Search provides two collection modes:
+
+1. **General knowledge** gathers bounded public web evidence through SearXNG
+   and writes a provenance-preserving Markdown reference document for the KB.
+2. **Scientific papers** discovers and downloads PDFs, extracts metadata and
+   text, and produces a cross-paper synthesis.
+
+Search topics, reports, source records, downloaded PDFs, Quick Extract/OCR
+outputs, and ingestion status are stored in SurrealDB. PDFs can be processed
+with Quick Extract or the OCR model before KB approval.
+
+## Rendering and Performance
+
+Electron/Chromium is the recommended host for fullscreen and ultrawide use.
+The renderer limits framebuffer megapixels instead of blindly using full device
+pixel ratio, temporarily reduces quality during window resize, culls offscreen
+graph content, throttles expensive streaming Markdown work, and offloads the
+community/gravity layout to a worker. The Status panel can switch among Auto,
+Quality, and Performance modes and displays current FPS and render resolution.
+
+## Project Layout
+
+```text
+Ayla/
+├── src/                         frontend, panels, Live2D, Markdown, TTS queue
+├── styles/                      blue Ayla UI theme and panel styles
+├── crates/
+│   ├── alice-core/              shared host-independent Rust backend
+│   └── alice-sidecar/           Electron MessagePack process adapter
+├── electron/                    secure main/preload, protocol, packaging tools
+├── src-tauri/                   thin reference Tauri host
+├── searxng/                     local search configuration
+├── docker-compose.yml           SurrealDB, Qdrant, SearXNG, Lightpanda
+├── Mk6_1.0/                     licensed avatar files; local and gitignored
+├── tts/                         local Piper/Sherpa resources
+├── MASTER_PLAN.md               historical architecture plan
+├── ELECTRON_RUST_MIGRATION_PLAN.md
+└── TEST_PLAN.md
+```
+
+The internal crate names, `alice:*` Electron IPC channels, database namespace,
+and `ALICE_*` environment variables are currently retained for data and protocol
+compatibility. User-facing branding and runtime character identity are Ayla.
 
 ## Testing
 
 ```bash
-# Quick smoke test (no Docker/Ollama needed)
 bash doctor.sh --quick --no-docker --no-ollama
-
-# Full system check (requires Docker + Ollama running)
 bash doctor.sh
-
-# Specific exclusions
-bash doctor.sh --no-docker    # Skip Docker checks
-bash doctor.sh --no-ollama    # Skip Ollama checks
+cargo test --manifest-path crates/alice-core/Cargo.toml
+cargo test --manifest-path crates/alice-sidecar/Cargo.toml
+npm run check
 ```
 
-The doctor script performs 40+ checks across 9 sections: environment, Docker services, Ollama models, Rust compilation, frontend build, integration points, database connectivity, code quality, and API tests. See `TEST_PLAN.md` for the full manual test matrix including UI interactions, end-to-end flows, and performance benchmarks.
-
-## Development
-
-```bash
-npm run dev            # Vite dev server only (browser)
-npm run tauri dev      # Full Tauri app in dev mode
-npm run tauri build    # Production build → AppImage + .deb
-```
-
-## Roadmap
-
-| Phase | Description | Status |
-|---|---|---|
-| 1 — Foundation | Tauri project, config, logging | Done |
-| 2 — TTS | Piper TTS with sentence-level streaming | Done |
-| 3 — Chat | Streaming Ollama with Live2D expressions | Done |
-| 4 — UI | Multi-panel layout, markdown, session history | Done |
-| 5 — Memory | SurrealDB + Qdrant + Petgraph knowledge graph | Done |
-| 6 — Tools | OCR (PDF → text) + meta-search (literature) | Done |
-| 7 — Pipeline | LLM extraction, summarization, consolidation | Done |
+See `TEST_PLAN.md` for manual workflows and performance checks.
 
 ## License
 
-MIT
+MIT License
+
+Copyright (c) 2026 Ayla contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The separately licensed Mk6 Live2D model files are not covered or redistributed
+by this repository's MIT license.

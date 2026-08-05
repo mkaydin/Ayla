@@ -8,7 +8,7 @@ import {
 
 const root = path.resolve(import.meta.dirname, '..');
 const sessionId = `alice-phase3-diagnostic-${randomUUID()}`;
-const title = 'ALICE Phase 3 mutation diagnostic';
+const title = 'Ayla Phase 3 mutation diagnostic';
 const messages = [
   { role: 'user', content: 'Verify Electron to Rust mutation parity.' },
   { role: 'assistant', content: 'The diagnostic record will be deleted immediately.' },

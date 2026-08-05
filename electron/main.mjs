@@ -33,7 +33,7 @@ const iconPath = join(
   ...(app.isPackaged ? ['assets'] : ['electron', 'assets']),
   process.platform === 'win32' && !app.isPackaged ? 'icon.ico' : 'icon.png',
 );
-app.setName('ALICE');
+app.setName('Ayla');
 
 function findLocalModelDirectory() {
   const candidates = [
@@ -115,7 +115,7 @@ function showDesktopNotification(rawPayload) {
 
   if (process.platform === 'linux' && existsSync('/usr/bin/notify-send')) {
     execFile('/usr/bin/notify-send', [
-      '--app-name=ALICE',
+      '--app-name=Ayla',
       `--urgency=${payload.urgency}`,
       `--icon=${iconPath}`,
       payload.title,
@@ -356,7 +356,7 @@ app.whenReady()
     await backendStart;
   })
   .catch(error => {
-    dialog.showErrorBox('ALICE Chromium failed to start', error.stack || error.message);
+    dialog.showErrorBox('Ayla failed to start', error.stack || error.message);
     app.quit();
   });
 
