@@ -1,18 +1,30 @@
 # Dependencies
-node_modules/
+/node_modules/
 
 # Build output
-dist/
-src-tauri/target/
-crates/*/target/
-crates/*/Cargo.lock
-release/electron/
-.electron-resources/
+/dist/
+/release/
+/.electron-resources/
+/src-tauri/target/
+/src-tauri/gen/
+/crates/*/target/
+/crates/*/Cargo.lock
+/coverage/
+/.nyc_output/
+/.tauri/
+/.vite/
 
-# Rust build artifacts
+# Compiler, cache, and temporary artifacts
 *.rs.bk
 *.pyc
 __pycache__/
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*~
 
 # OS files
 .DS_Store
@@ -25,10 +37,14 @@ Thumbs.db
 .env.local
 .env.*.local
 # ONNX model files (large binaries, downloaded separately)
-models/*.onnx
-models/kws/*.onnx
-tts/tts_piper_amy_low/*.onnx
-tts/tts_piper_amy_en_model/*.onnx
+/models/*.onnx
+/models/kws/*.onnx
+/tts/tts_piper_amy_low/*.onnx
+/tts/tts_piper_amy_en_model/*.onnx
+
+# Locally downloaded/imported papers. Repository documentation images belong
+# in /images and deliberate fixtures should be explicitly unignored here.
+*.pdf
 
 # Large binary files
 DemonGirl-UnzipThisFolder.zip
@@ -42,11 +58,11 @@ DemonGirl-UnzipThisFolder.zip
 /tts/sherpa-onnx
 
 # Docker data volumes
-data/
+/data/
 
 # graphify analysis output
-graphify-out/
+/graphify-out/
 
 # IDE
-.vscode/
-.idea/
+/.vscode/
+/.idea/
