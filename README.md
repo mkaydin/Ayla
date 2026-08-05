@@ -121,13 +121,28 @@ and binary audio over private pipes.
 | Frontend | Vanilla JavaScript modules, Vite 5 |
 | Avatar rendering | PixiJS 6, pixi-live2d-display, Cubism 4 |
 | Markdown | marked, DOMPurify, KaTeX, Highlight.js |
-| Rust backend | `alice-core` plus `alice-sidecar` compatibility crate names |
+| Rust backend | Cargo workspace: `ayla-core`, `ayla-sidecar`, `ayla-ocr`, `ayla-research` |
 | LLM and embeddings | Ollama, configurable text model, `qwen3-embedding:0.6b` |
 | Text-to-speech | Sherpa-ONNX Piper VITS (`amy-low`) |
 | Structured storage | SurrealDB |
 | Vector storage | Qdrant |
 | Graph | Petgraph with SurrealDB persistence |
-| Search | SearXNG, Lightpanda, external Meta Search helper |
+| Search | In-process `ayla-research` pipeline with SearXNG and Lightpanda |
+
+### Rust Workspace Packages
+
+| Package | Role |
+|---|---|
+| `ayla-core` | Host-independent application backend: memory, databases, knowledge graph, ingestion, chat orchestration, TTS, and the shared command API. |
+| `ayla-sidecar` | Electron's private framed-MessagePack adapter. It owns `ayla-core`, dispatches validated commands, streams events/audio, and supports request cancellation. |
+| `ayla-ocr` | In-process PDF rendering and page OCR through Ollama. It owns temporary render files and reports page-level progress without launching a helper executable. |
+| `ayla-research` | In-process scientific research pipeline: SearXNG discovery, PDF download, Lightpanda rendering, extraction, Ollama analysis, and cross-source synthesis. |
+
+The former `alice-core` and `alice-sidecar` packages were renamed to
+`ayla-core` and `ayla-sidecar`. OCR and research were also moved from sibling
+binary projects into the workspace as linked Rust libraries. Electron now
+packages one Rust executable—`ayla-sidecar`—with OCR and research compiled into
+it.
 
 ## Requirements
 
@@ -170,16 +185,8 @@ npm run electron:dev
 ```
 
 Install the licensed avatar as `Mk6_1.0/Mk6.model3.json`, or point
-`ALICE_LIVE2D_MODEL_DIR` at its directory. The `ALICE_*` environment prefix is
-retained as a backward-compatible configuration API; it does not represent the
-current Ayla product identity.
-
-Optional external helpers can be built from sibling repositories:
-
-```bash
-(cd ../ocr_helper_system && cargo build --release)
-(cd ../meta_search_Js_render && cargo build --release)
-```
+`AYLA_LIVE2D_MODEL_DIR` at its directory. OCR and scientific research require
+no sibling repositories or separately built helper executables.
 
 ## Running and Building
 
@@ -217,16 +224,17 @@ Copy `.env.example` to `.env`. Important settings include:
 | `SURREAL_USER`, `SURREAL_PASS` | SurrealDB credentials |
 | `SEARXNG_SECRET` | SearXNG session signing secret |
 | `SEARXNG_URL` | SearXNG endpoint |
-| `ALICE_LLM_MODEL` | Ollama text model; legacy variable name retained |
-| `ALICE_EMBED_MODEL` | Ollama embedding model |
-| `ALICE_OLLAMA_NUM_CTX` | Hardware-safe maximum context window |
-| `ALICE_OLLAMA_LONG_TIMEOUT_SECS` | Long LLM timeout; `0` disables it |
-| `ALICE_OLLAMA_TRANSPORT_RETRIES` | Transient extraction retry count, 0–10 |
-| `ALICE_LIVE2D_MODEL_DIR` | Licensed Mk6 model directory |
-| `ALICE_OCR_BIN`, `ALICE_SEARCH_BIN` | Optional external helper overrides |
+| `AYLA_LLM_MODEL` | Ollama text model |
+| `AYLA_EMBED_MODEL` | Ollama embedding model |
+| `AYLA_OCR_MODEL` | Ollama vision model used by the in-process OCR crate |
+| `AYLA_OLLAMA_NUM_CTX` | Hardware-safe maximum context window |
+| `AYLA_OLLAMA_LONG_TIMEOUT_SECS` | Long LLM/OCR timeout; `0` disables it |
+| `AYLA_OLLAMA_TRANSPORT_RETRIES` | Transient extraction retry count, 0–10 |
+| `AYLA_LIGHTPANDA_URL` | Lightpanda WebSocket endpoint used by research |
+| `AYLA_LIVE2D_MODEL_DIR` | Licensed Mk6 model directory |
 
 Context is selected automatically from the serialized prompt and requested
-output budget, up to `ALICE_OLLAMA_NUM_CTX`. Do not set the ceiling to the
+output budget, up to `AYLA_OLLAMA_NUM_CTX`. Do not set the ceiling to the
 model's advertised maximum unless the available RAM/VRAM can support its KV
 cache. Long extraction, graph analysis, and knowledge writing have no total
 HTTP timeout by default. Temporary transport errors, rate limits, and common
@@ -326,9 +334,12 @@ Quality, and Performance modes and displays current FPS and render resolution.
 Ayla/
 ├── src/                         frontend, panels, Live2D, Markdown, TTS queue
 ├── styles/                      blue Ayla UI theme and panel styles
+├── Cargo.toml                   Rust workspace definition
 ├── crates/
-│   ├── alice-core/              shared host-independent Rust backend
-│   └── alice-sidecar/           Electron MessagePack process adapter
+│   ├── ayla-core/               shared host-independent application backend
+│   ├── ayla-sidecar/            Electron MessagePack protocol adapter
+│   ├── ayla-ocr/                in-process PDF rendering and Ollama OCR
+│   └── ayla-research/           in-process search, download, analysis, synthesis
 ├── electron/                    secure main/preload, protocol, packaging tools
 ├── src-tauri/                   thin reference Tauri host
 ├── searxng/                     local search configuration
@@ -340,17 +351,17 @@ Ayla/
 └── TEST_PLAN.md
 ```
 
-The internal crate names, `alice:*` Electron IPC channels, database namespace,
-and `ALICE_*` environment variables are currently retained for data and protocol
-compatibility. User-facing branding and runtime character identity are Ayla.
+First-party runtime identifiers now use Ayla consistently: Rust packages use
+`ayla-*`, Rust imports use `ayla_*`, Electron IPC channels use `ayla:*`, and
+application-specific environment variables use the `AYLA_*` prefix.
 
 ## Testing
 
 ```bash
 bash doctor.sh --quick --no-docker --no-ollama
 bash doctor.sh
-cargo test --manifest-path crates/alice-core/Cargo.toml
-cargo test --manifest-path crates/alice-sidecar/Cargo.toml
+cargo test --workspace
+cargo check --manifest-path src-tauri/Cargo.toml
 npm run check
 ```
 
