@@ -21,14 +21,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(ProcessRegistry::new())
         .setup(|app| {
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                std::env::set_var("AYLA_DATA_DIR", data_dir);
+            }
             let resource_dir = app.path().resource_dir().ok();
-            let resources = alice_core::ResourceLocator::new(
+            let resources = ayla_core::ResourceLocator::new(
                 resource_dir.clone(),
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")),
             );
             let events = Arc::new(event_sink::TauriEventSink::new(app.handle().clone()));
             app.manage(TtsState::new(&resources));
-            app.manage(alice_core::BackendFoundation::new(resources, events));
+            app.manage(ayla_core::BackendFoundation::new(resources, events));
             let config = MemoryConfig::default();
             // Register memory state before the webview can issue IPC commands.
             let manager = tauri::async_runtime::block_on(MemoryManager::new(config));

@@ -9,11 +9,11 @@ const MODEL_MIME_TYPES = new Map([
 ]);
 
 function localMk6Model() {
-  const directory = resolve(process.env.ALICE_LIVE2D_MODEL_DIR || 'Mk6_1.0');
+  const directory = resolve(process.env.AYLA_LIVE2D_MODEL_DIR || 'Mk6_1.0');
   return {
-    name: 'alice-local-mk6-model',
+    name: 'ayla-local-mk6-model',
     configureServer(server) {
-      server.middlewares.use('/__alice_model__', (request, response) => {
+      server.middlewares.use('/__ayla_model__', (request, response) => {
         let pathname;
         try {
           pathname = decodeURIComponent(new URL(request.url || '/', 'http://localhost').pathname);

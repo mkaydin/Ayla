@@ -5,9 +5,7 @@ use crate::memory::{safe_truncate, MemoryManager};
 use crate::{BackendError, EventSink, MemoryConfig, ProcessRegistry, ResourceLocator};
 use serde_json::Value;
 use std::collections::HashSet;
-use std::process::Stdio;
 use std::time::Duration;
-use tokio::process::Command;
 
 async fn connect_search_db(manager: &MemoryManager) -> Result<SurrealDB, String> {
     if !manager.is_db_ready() {
@@ -574,7 +572,7 @@ async fn persist_search_result(
 
 pub async fn run_search(
     manager: &MemoryManager,
-    resources: &ResourceLocator,
+    _resources: &ResourceLocator,
     events: &dyn EventSink,
     processes: &ProcessRegistry,
     query: String,
@@ -605,47 +603,50 @@ pub async fn run_search(
             .await
             .map_err(BackendError::from)?
     } else {
-        let binary = resources.resolve_tool(
-            "ALICE_SEARCH_BIN",
-            "meta_search",
-            "../../meta_search_Js_render/target/release/meta_search",
-        );
-        if !binary.exists() {
-            return Err(BackendError::new(
-                "search_binary_missing",
-                "Meta search binary not found. Build: cd ../meta_search_Js_render && cargo build --release",
-            ));
-        }
-        let child = Command::new(&binary)
-            .args([
-                "-j",
-                "-n",
-                "10",
-                "--model",
-                &manager.config.llm_model,
-                "--ollama-url",
-                &manager.config.ollama_url,
-                "--searxng-url",
-                &manager.config.searxng_url,
-                "--lightpanda-url",
-                "ws://127.0.0.1:9222",
-                &query,
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| {
-                BackendError::new("search_spawn", format!("Failed to start search: {error}"))
-            })?;
-        let cancel_rx = processes.register_child(pid.clone(), child).await;
+        let data_dir = std::env::var_os("AYLA_DATA_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .unwrap_or_else(|_| std::env::temp_dir())
+                    .join("ayla-data")
+            })
+            .join("research");
+        let options = ayla_research::ResearchOptions {
+            searxng_url: manager.config.searxng_url.clone(),
+            lightpanda_url: manager.config.lightpanda_url.clone(),
+            ollama_url: manager.config.ollama_url.clone(),
+            model: manager.config.llm_model.clone(),
+            max_num_ctx: manager.config.ollama_num_ctx,
+            request_timeout_secs: manager.config.ollama_long_timeout_secs as u64,
+            max_papers: 10,
+            search_pages: 2,
+            data_dir,
+        };
+        let cancel_rx = processes.register_task(pid.clone()).await;
         let _process_cleanup = processes.cleanup_on_drop(pid.clone());
         let _ = events.emit("search-started", serde_json::json!({ "pid": pid }));
-        let stdout = processes
-            .wait_child(&pid, None, cancel_rx)
-            .await
-            .map_err(BackendError::from)?;
-        crate::tools::meta_search::parse_meta_search_stdout(&stdout).map_err(BackendError::from)?
+        let progress_pid = pid.clone();
+        let progress = |update: ayla_research::ResearchProgress| {
+            let mut payload = serde_json::to_value(update).unwrap_or_default();
+            payload["pid"] = Value::String(progress_pid.clone());
+            let _ = events.emit("search-progress", payload);
+        };
+        let report = tokio::select! {
+            result = ayla_research::search_with_progress(&query, options, Some(&progress)) => {
+                processes.finish(&pid).await;
+                result.map_err(|error| BackendError::new("research_failed", error.to_string()))?
+            }
+            _ = cancel_rx => {
+                processes.finish(&pid).await;
+                return Err(BackendError::new("research_cancelled", "Research cancelled"));
+            }
+        };
+        serde_json::to_value(report).map_err(|error| {
+            BackendError::new(
+                "research_result",
+                format!("Cannot serialize research result: {error}"),
+            )
+        })?
     };
     let search_id = parsed
         .get("session_id")

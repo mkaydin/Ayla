@@ -15,14 +15,12 @@ import {
 } from '../electron/stage-resources.mjs';
 
 function fixture() {
-  const directory = mkdtempSync(path.join(os.tmpdir(), 'alice-stage-'));
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'ayla-stage-'));
   const source = path.join(directory, 'source');
   const stageDirectory = path.join(directory, 'stage');
   mkdirSync(source);
   const files = {
-    ALICE_SIDECAR_BIN: path.join(source, 'sidecar'),
-    ALICE_OCR_BIN: path.join(source, 'ocr'),
-    ALICE_SEARCH_BIN: path.join(source, 'search'),
+    AYLA_SIDECAR_BIN: path.join(source, 'sidecar'),
   };
   for (const filePath of Object.values(files)) {
     writeFileSync(filePath, 'fixture');
@@ -38,7 +36,7 @@ test('Electron resource staging uses overrides and preserves executable resource
     stageDirectory,
     env: files,
   });
-  assert.equal(manifest.length, 3);
+  assert.equal(manifest.length, 1);
   for (const item of manifest) {
     assert.equal(statSync(item.destination).isFile(), true);
     if (process.platform !== 'win32') {
@@ -48,13 +46,13 @@ test('Electron resource staging uses overrides and preserves executable resource
 });
 
 test('Electron resource staging reports every missing dependency and build hint', () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), 'alice-stage-missing-'));
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'ayla-stage-missing-'));
   const manifest = resourceManifest({
     root: directory,
     stageDirectory: path.join(directory, 'stage'),
     env: {},
   });
-  assert.equal(manifest.length, 3);
+  assert.equal(manifest.length, 1);
   assert.throws(
     () => stageResources({
       root: directory,
@@ -63,9 +61,7 @@ test('Electron resource staging reports every missing dependency and build hint'
     }),
     error => (
       error.message.includes('Rust sidecar')
-      && error.message.includes('OCR helper')
-      && error.message.includes('Meta Search helper')
-      && error.message.includes('cargo build --release')
+      && error.message.includes('sidecar:build:release')
     ),
   );
 });

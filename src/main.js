@@ -52,13 +52,13 @@ const state = {
   autoBlink: true,
   mouseLook: true,
   ttsEnabled: true,
-  processAnnouncementsEnabled: storedToggle('alice_process_announcements'),
-  desktopNotificationsEnabled: storedToggle('alice_desktop_notifications'),
+  processAnnouncementsEnabled: storedToggle('ayla_process_announcements'),
+  desktopNotificationsEnabled: storedToggle('ayla_desktop_notifications'),
   nextBlinkAt: performance.now() + 2000 + Math.random() * 3000,
   blinkPhase: 0, blinkStart: 0,
   micLevel: 0, mouthOpen: 0, ttsMouth: 0,
   headX: 0, headY: 0, eyeX: 0, eyeY: 0,
-  renderQuality: normalizeRenderQuality(localStorage.getItem('alice_render_quality')),
+  renderQuality: normalizeRenderQuality(localStorage.getItem('ayla_render_quality')),
   renderResolution: 1,
   renderFps: 0,
   isResizing: false,
@@ -148,7 +148,7 @@ window.addEventListener('resize', () => {
 
 state.setRenderQuality = (quality) => {
   state.renderQuality = normalizeRenderQuality(quality);
-  localStorage.setItem('alice_render_quality', state.renderQuality);
+  localStorage.setItem('ayla_render_quality', state.renderQuality);
   scheduleRendererResize();
   events.emit('render-quality-change', state.renderQuality);
 };
@@ -252,7 +252,7 @@ async function main() {
   const core = model.internalModel.coreModel;
   const expressionController = new Mk6ExpressionController(model);
   const motionController = new Mk6MotionController(model);
-  const sleepAfterMs = Number(localStorage.getItem('alice_sleep_after_ms')) || 5 * 60_000;
+  const sleepAfterMs = Number(localStorage.getItem('ayla_sleep_after_ms')) || 5 * 60_000;
   const animationCoordinator = new Mk6AnimationCoordinator({
     expressionController,
     motionController,
@@ -310,7 +310,7 @@ async function main() {
     animationState: () => animationCoordinator.getState(),
     setSleepAfterMs: milliseconds => {
       animationCoordinator.sleepAfterMs = Math.max(60_000, Number(milliseconds) || 300_000);
-      localStorage.setItem('alice_sleep_after_ms', String(animationCoordinator.sleepAfterMs));
+      localStorage.setItem('ayla_sleep_after_ms', String(animationCoordinator.sleepAfterMs));
     },
   });
 

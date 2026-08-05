@@ -248,12 +248,12 @@ export function saveAllPanelStates() {
   for (const [id, panel] of panels) {
     states[id] = panel.saveState();
   }
-  localStorage.setItem('alice_panel_states', JSON.stringify(states));
+  localStorage.setItem('ayla_panel_states', JSON.stringify(states));
 }
 
 export function restoreAllPanelStates() {
   try {
-    const raw = localStorage.getItem('alice_panel_states');
+    const raw = localStorage.getItem('ayla_panel_states');
     if (!raw) return;
     const states = JSON.parse(raw);
     for (const [id, state] of Object.entries(states)) {

@@ -7,15 +7,15 @@ function tauriInvoke() {
 
 export function getDesktopRuntime() {
   if (window.__TAURI_INTERNALS__) return 'tauri';
-  if (window.aliceDesktop?.runtime === 'electron') return 'electron';
+  if (window.aylaDesktop?.runtime === 'electron') return 'electron';
   return 'browser';
 }
 
 function getIpc() {
   const invokeTauri = tauriInvoke();
   if (invokeTauri) return invokeTauri;
-  if (window.aliceDesktop?.invoke) {
-    return window.aliceDesktop.invoke;
+  if (window.aylaDesktop?.invoke) {
+    return window.aylaDesktop.invoke;
   }
   return null;
 }
@@ -25,7 +25,7 @@ export function hasDesktopBackend() {
 }
 
 export async function getRuntimeInfo() {
-  if (window.aliceDesktop?.runtimeInfo) return window.aliceDesktop.runtimeInfo();
+  if (window.aylaDesktop?.runtimeInfo) return window.aylaDesktop.runtimeInfo();
   const runtime = getDesktopRuntime();
   return {
     runtime,
@@ -40,7 +40,7 @@ export async function getRuntimeInfo() {
 }
 
 export function canRestartBackend() {
-  return typeof window.aliceDesktop?.restartBackend === 'function';
+  return typeof window.aylaDesktop?.restartBackend === 'function';
 }
 
 export function serviceHealthUrl(id, directUrl) {
@@ -49,7 +49,7 @@ export function serviceHealthUrl(id, directUrl) {
 
 export function invokeStreamCancelable(cmd, args, onEvent) {
   const requestId = crypto.randomUUID();
-  const electron = window.aliceDesktop;
+  const electron = window.aylaDesktop;
   let settled = false;
   const promise = window.__TAURI_INTERNALS__
     ? import('@tauri-apps/api/core').then(({ Channel }) => {
@@ -90,7 +90,7 @@ export async function invoke(cmd, args = {}) {
 
 export function invokeCancelable(cmd, args = {}) {
   const requestId = crypto.randomUUID();
-  const electron = window.aliceDesktop;
+  const electron = window.aylaDesktop;
   let processId = null;
   let cancelRequested = false;
   let settled = false;
@@ -130,7 +130,7 @@ export function invokeCancelable(cmd, args = {}) {
 }
 
 export async function getBackendStatus() {
-  if (window.aliceDesktop?.backendStatus) return window.aliceDesktop.backendStatus();
+  if (window.aylaDesktop?.backendStatus) return window.aylaDesktop.backendStatus();
   if (window.__TAURI_INTERNALS__) {
     return {
       state: 'ready',
@@ -152,13 +152,13 @@ export async function getBackendStatus() {
 }
 
 export async function restartBackend() {
-  if (window.aliceDesktop?.restartBackend) return window.aliceDesktop.restartBackend();
+  if (window.aylaDesktop?.restartBackend) return window.aylaDesktop.restartBackend();
   throw new Error('Backend restart is only available in Electron mode');
 }
 
 export function listenBackendStatus(callback) {
-  if (window.aliceDesktop?.listenBackendStatus) {
-    return window.aliceDesktop.listenBackendStatus(callback);
+  if (window.aylaDesktop?.listenBackendStatus) {
+    return window.aylaDesktop.listenBackendStatus(callback);
   }
   return () => {};
 }
@@ -173,7 +173,7 @@ export async function listenEvent(event, cb) {
     }
     return eventListen(event, cb);
   }
-  if (window.aliceDesktop?.listen) return window.aliceDesktop.listen(event, cb);
+  if (window.aylaDesktop?.listen) return window.aylaDesktop.listen(event, cb);
   return () => {};
 }
 
@@ -184,8 +184,8 @@ export async function selectFiles(options = {}) {
     if (!selected) return [];
     return Array.isArray(selected) ? selected : [selected];
   }
-  if (window.aliceDesktop?.selectFiles) {
-    return window.aliceDesktop.selectFiles(options);
+  if (window.aylaDesktop?.selectFiles) {
+    return window.aylaDesktop.selectFiles(options);
   }
   return null;
 }
@@ -201,16 +201,16 @@ export async function openPdf(filePath) {
     await shellOpen(filePath);
     return;
   }
-  if (window.aliceDesktop?.openPath) {
-    await window.aliceDesktop.openPath(filePath);
+  if (window.aylaDesktop?.openPath) {
+    await window.aylaDesktop.openPath(filePath);
     return;
   }
   window.open(filePath, '_blank');
 }
 
 export async function showDesktopNotification(payload) {
-  if (window.aliceDesktop?.showNotification) {
-    return window.aliceDesktop.showNotification(payload);
+  if (window.aylaDesktop?.showNotification) {
+    return window.aylaDesktop.showNotification(payload);
   }
   return { shown: false, backend: 'unsupported' };
 }

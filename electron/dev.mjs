@@ -66,7 +66,7 @@ try {
     cwd: projectDirectory,
     env: {
       ...process.env,
-      ALICE_ELECTRON_DEV_URL: developmentUrl,
+      AYLA_ELECTRON_DEV_URL: developmentUrl,
     },
     stdio: 'inherit',
   });

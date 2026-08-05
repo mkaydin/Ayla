@@ -906,10 +906,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires a running Ollama instance and ALICE_EXTRACTION_FIXTURE"]
+    #[ignore = "requires a running Ollama instance and AYLA_EXTRACTION_FIXTURE"]
     async fn live_document_extraction_smoke() {
-        let path = std::env::var("ALICE_EXTRACTION_FIXTURE")
-            .expect("set ALICE_EXTRACTION_FIXTURE to a text document");
+        let path = std::env::var("AYLA_EXTRACTION_FIXTURE")
+            .expect("set AYLA_EXTRACTION_FIXTURE to a text document");
         let text = std::fs::read_to_string(&path).expect("read extraction fixture");
         let name = std::path::Path::new(&path)
             .file_name()

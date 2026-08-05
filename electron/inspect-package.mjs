@@ -5,9 +5,7 @@ import process from 'node:process';
 const root = path.resolve(import.meta.dirname, '..');
 const resources = path.join(root, 'release', 'electron', 'linux-unpacked', 'resources');
 const required = [
-  ['Rust sidecar', path.join(resources, 'bin', 'alice-sidecar'), true],
-  ['OCR helper', path.join(resources, 'tools', 'ocr-helper'), true],
-  ['Meta Search helper', path.join(resources, 'tools', 'meta_search'), true],
+  ['Rust sidecar', path.join(resources, 'bin', 'ayla-sidecar'), true],
   ['Piper model', path.join(resources, 'tts', 'tts_piper_amy_low', 'en_US-amy-low.onnx'), false],
   ['Electron application archive', path.join(resources, 'app.asar'), false],
 ];

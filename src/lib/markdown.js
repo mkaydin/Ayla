@@ -14,7 +14,7 @@ marked.setOptions({ breaks: true, gfm: true });
 
 const renderer = new marked.Renderer();
 
-const MATH_TOKEN_PREFIX = 'ALICE_MATH_TOKEN_';
+const MATH_TOKEN_PREFIX = 'AYLA_MATH_TOKEN_';
 const CODE_HIGHLIGHT_CACHE_LIMIT = 128;
 const codeHighlightCache = new Map();
 const AUTO_DETECT_LANGUAGES = [

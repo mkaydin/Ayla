@@ -39,29 +39,6 @@ impl ResourceLocator {
         }
         self.development_root.join(development_relative)
     }
-
-    pub fn resolve_tool(
-        &self,
-        environment_key: &str,
-        bundled_name: &str,
-        development_relative: &str,
-    ) -> PathBuf {
-        if let Ok(path) = std::env::var(environment_key) {
-            let path = PathBuf::from(path);
-            if path.exists() {
-                return path;
-            }
-        }
-
-        if let Some(resource_dir) = &self.resource_dir {
-            let path = resource_dir.join("tools").join(bundled_name);
-            if path.exists() {
-                return path;
-            }
-        }
-
-        self.development_root.join(development_relative)
-    }
 }
 
 #[cfg(test)]
@@ -69,33 +46,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn development_tool_path_is_deterministic() {
-        let locator = ResourceLocator::new(None, "/workspace/src-tauri");
-        assert_eq!(
-            locator.resolve_tool(
-                "ALICE_TEST_TOOL_NOT_SET",
-                "helper",
-                "../../helper/target/release/helper"
-            ),
-            PathBuf::from("/workspace/src-tauri/../../helper/target/release/helper")
-        );
-    }
-
-    #[test]
     fn resource_paths_are_host_supplied() {
-        let locator = ResourceLocator::new(Some(PathBuf::from("/opt/alice")), "/workspace");
+        let locator = ResourceLocator::new(Some(PathBuf::from("/opt/ayla")), "/workspace");
         assert_eq!(
             locator.resource("tts/model.onnx"),
-            Some(PathBuf::from("/opt/alice/tts/model.onnx"))
+            Some(PathBuf::from("/opt/ayla/tts/model.onnx"))
         );
     }
 
     #[test]
     fn missing_installed_resource_falls_back_to_development_tree() {
-        let locator = ResourceLocator::new(
-            Some(PathBuf::from("/missing/alice")),
-            "/workspace/src-tauri",
-        );
+        let locator =
+            ResourceLocator::new(Some(PathBuf::from("/missing/ayla")), "/workspace/src-tauri");
         assert_eq!(
             locator.resolve_resource("tts/model.onnx", "../tts/model.onnx"),
             PathBuf::from("/workspace/src-tauri/../tts/model.onnx")

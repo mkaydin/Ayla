@@ -9,7 +9,7 @@ async function loadAdapter(name, windowValue) {
 test('desktop adapter routes Electron commands without exposing preload details to UI', async () => {
   const calls = [];
   const adapter = await loadAdapter('electron', {
-    aliceDesktop: {
+    aylaDesktop: {
       runtime: 'electron',
       invoke: async (command, args) => {
         calls.push({ command, args });

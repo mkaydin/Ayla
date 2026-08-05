@@ -1,7 +1,7 @@
 import { invoke } from '../lib/ipc.js';
 
-export const MK6_MODEL_URL = '/__alice_model__/Mk6.model3.json';
-export const MK6_EXPRESSION_DATA = Symbol('alice.mk6.expressionData');
+export const MK6_MODEL_URL = '/__ayla_model__/Mk6.model3.json';
+export const MK6_EXPRESSION_DATA = Symbol('ayla.mk6.expressionData');
 
 const expression = (id, label, channel, slots = [channel]) => Object.freeze({
   id,
@@ -164,7 +164,7 @@ function disableNativeExpressions(manifest) {
 async function loadMk6FromTauri(Live2DModel) {
   const read = async path => byteArray(await invoke('read_live2d_asset', { relativePath: path }));
   const source = JSON.parse(new TextDecoder().decode(await read('Mk6.model3.json')));
-  const manifest = augmentMk6Manifest(source, 'http://alice.local/Mk6.model3.json');
+  const manifest = augmentMk6Manifest(source, 'http://ayla.local/Mk6.model3.json');
   const expressionData = new Map();
   const objectUrls = [];
   const mount = async path => {
@@ -230,7 +230,7 @@ export async function loadMk6Model(Live2DModel, fetchImpl = fetch) {
       return loadMk6FromTauri(Live2DModel);
     }
     throw new Error(
-      `Mk6 model is unavailable (${networkError.message}). Install Mk6_1.0 locally or set ALICE_LIVE2D_MODEL_DIR.`,
+      `Mk6 model is unavailable (${networkError.message}). Install Mk6_1.0 locally or set AYLA_LIVE2D_MODEL_DIR.`,
     );
   }
 }

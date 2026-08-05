@@ -1,5 +1,5 @@
 use crate::protocol::OutgoingMessage;
-use alice_core::{EventSink, StreamSink};
+use ayla_core::{EventSink, StreamSink};
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Clone)]
@@ -66,7 +66,7 @@ impl StreamSink for ProtocolStreamSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alice_core::{EventSink, StreamSink};
+    use ayla_core::{EventSink, StreamSink};
 
     #[test]
     fn request_sinks_attach_correlation_ids() {

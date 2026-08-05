@@ -1,6 +1,6 @@
 //! Thin Tauri adapters for the shared TTS service.
 
-pub use alice_core::TtsService as TtsState;
+pub use ayla_core::TtsService as TtsState;
 use tauri::State;
 
 #[tauri::command]

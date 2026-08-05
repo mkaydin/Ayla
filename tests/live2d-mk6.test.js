@@ -102,7 +102,7 @@ test('Mk6 loader passes the completed manifest to the Cubism runtime', async () 
   const fetchModel = async path => ({
     ok: true,
     async json() {
-      if (path !== '/__alice_model__/Mk6.model3.json') return { Parameters: [] };
+      if (path !== '/__ayla_model__/Mk6.model3.json') return { Parameters: [] };
       return {
         Version: 3,
         FileReferences: {
@@ -130,7 +130,7 @@ test('Mk6 loader passes the completed manifest to the Cubism runtime', async () 
 test('Mk6 loader gives an actionable error when no local mount exists', async () => {
   await assert.rejects(
     () => loadMk6Model({}, async () => ({ ok: false, status: 404 })),
-    /Install Mk6_1\.0 locally or set ALICE_LIVE2D_MODEL_DIR/,
+    /Install Mk6_1\.0 locally or set AYLA_LIVE2D_MODEL_DIR/,
   );
 });
 

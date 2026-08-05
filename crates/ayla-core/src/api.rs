@@ -8,9 +8,7 @@ use crate::{BackendError, EventSink, ResourceLocator, StreamSink};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::process::Stdio;
 use std::time::Duration;
-use tokio::process::Command;
 
 const MAX_TEXT_PAYLOAD: usize = 50 * 1024 * 1024;
 const MAX_MESSAGES_PAYLOAD: usize = 10 * 1024 * 1024;
@@ -857,7 +855,7 @@ impl<'manager> BackendApi<'manager> {
     pub async fn run_ocr(
         &self,
         file_path: &str,
-        resources: &ResourceLocator,
+        _resources: &ResourceLocator,
         events: &dyn EventSink,
         processes: &ProcessRegistry,
     ) -> Result<OcrResult, BackendError> {
@@ -866,52 +864,36 @@ impl<'manager> BackendApi<'manager> {
         let pid = uuid::Uuid::new_v4().to_string();
         log::info!("OCR [{}]: starting for {}", pid, file_path);
 
-        let binary = resources.resolve_tool(
-            "ALICE_OCR_BIN",
-            "ocr-helper",
-            "../../ocr_helper_system/target/release/ocr-helper",
-        );
-        if !binary.exists() {
-            return Err(BackendError::new(
-                "ocr_binary_missing",
-                "OCR binary not found. Build: cd ../ocr_helper_system && cargo build --release",
-            ));
-        }
-
-        let output_markdown = format!("/tmp/alice_ocr_{}.md", uuid::Uuid::new_v4());
-        let _output_cleanup = TemporaryOutput::new(&output_markdown);
-        let child = Command::new(&binary)
-            .args([
-                "--input",
-                &file_path,
-                "--output",
-                &output_markdown,
-                "--count",
-                "0",
-                "--no-images",
-            ])
-            // The sidecar owns stdout as a framed MessagePack transport.
-            // Never allow helper console output to inherit and corrupt it.
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| {
-                BackendError::new("ocr_spawn", format!("Failed to start OCR: {error}"))
-            })?;
-
-        let cancel_rx = processes.register_child(pid.clone(), child).await;
+        let options = ayla_ocr::OcrOptions {
+            model: self.manager.config.ocr_model.clone(),
+            ollama_url: self.manager.config.ollama_url.clone(),
+            request_timeout_secs: self.manager.config.ollama_long_timeout_secs as u64,
+            ..Default::default()
+        };
+        let cancel_rx = processes.register_task(pid.clone()).await;
         let _process_cleanup = processes.cleanup_on_drop(pid.clone());
         let _ = events.emit("ocr-started", serde_json::json!({ "pid": pid }));
-        let text = processes
-            .wait_child(&pid, Some(&output_markdown), cancel_rx)
-            .await
-            .map_err(BackendError::from)?;
-        log::info!("OCR [{}]: done — {} chars", pid, text.len());
+        let progress_pid = pid.clone();
+        let progress = |update: ayla_ocr::OcrProgress| {
+            let mut payload = serde_json::to_value(update).unwrap_or_default();
+            payload["pid"] = Value::String(progress_pid.clone());
+            let _ = events.emit("ocr-progress", payload);
+        };
+        let document = tokio::select! {
+            result = ayla_ocr::extract_pdf(&file_path, options, Some(&progress)) => {
+                processes.finish(&pid).await;
+                result.map_err(|error| BackendError::new("ocr_failed", error.to_string()))?
+            }
+            _ = cancel_rx => {
+                processes.finish(&pid).await;
+                return Err(BackendError::new("ocr_cancelled", "OCR cancelled"));
+            }
+        };
+        log::info!("OCR [{}]: done — {} chars", pid, document.text.len());
         Ok(OcrResult {
-            chars: text.len(),
-            text,
-            pages: "?".into(),
+            chars: document.text.len(),
+            text: document.text,
+            pages: document.pages_processed.to_string(),
             pid,
         })
     }
@@ -1349,30 +1331,6 @@ fn string_field(record: &Value, field: &str) -> String {
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string()
-}
-
-struct TemporaryOutput {
-    path: std::path::PathBuf,
-}
-
-impl TemporaryOutput {
-    fn new(path: impl Into<std::path::PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
-}
-
-impl Drop for TemporaryOutput {
-    fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_file(&self.path) {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                log::warn!(
-                    "Failed to remove temporary output '{}': {}",
-                    self.path.display(),
-                    error
-                );
-            }
-        }
-    }
 }
 
 fn validate_source_file(file_path: &str) -> Result<std::path::PathBuf, BackendError> {

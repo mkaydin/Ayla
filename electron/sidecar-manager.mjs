@@ -32,8 +32,8 @@ function timeoutForRequest(method, params, requestedTimeout) {
   if (LONG_COMMANDS.has(method)) {
     // Long extraction/OCR/search work must not be cancelled merely because a
     // slower machine needs more time. A finite safety deadline is opt-in.
-    if (process.env.ALICE_DISABLE_LONG_REQUEST_TIMEOUT === '1') return null;
-    const configured = Number(process.env.ALICE_LONG_REQUEST_TIMEOUT_MS);
+    if (process.env.AYLA_DISABLE_LONG_REQUEST_TIMEOUT === '1') return null;
+    const configured = Number(process.env.AYLA_LONG_REQUEST_TIMEOUT_MS);
     return Number.isFinite(configured) && configured > 0 ? configured : null;
   }
   return DEFAULT_TIMEOUT;
@@ -50,12 +50,12 @@ export class SidecarRequestError extends Error {
 }
 
 export function developmentSidecarPath(root = projectDirectory) {
-  const executable = process.platform === 'win32' ? 'alice-sidecar.exe' : 'alice-sidecar';
-  return join(root, 'crates', 'alice-sidecar', 'target', 'debug', executable);
+  const executable = process.platform === 'win32' ? 'ayla-sidecar.exe' : 'ayla-sidecar';
+  return join(root, 'target', 'debug', executable);
 }
 
 export function packagedSidecarPath(resourcesPath) {
-  const executable = process.platform === 'win32' ? 'alice-sidecar.exe' : 'alice-sidecar';
+  const executable = process.platform === 'win32' ? 'ayla-sidecar.exe' : 'ayla-sidecar';
   return join(resourcesPath, 'bin', executable);
 }
 

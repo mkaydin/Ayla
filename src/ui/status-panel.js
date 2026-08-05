@@ -290,7 +290,7 @@ function buildControls(panel) {
   announcementBtn.addEventListener('click', () => {
     const on = !(window.__app?.processAnnouncementsEnabled !== false);
     if (window.__app) window.__app.processAnnouncementsEnabled = on;
-    localStorage.setItem('alice_process_announcements', String(on));
+    localStorage.setItem('ayla_process_announcements', String(on));
     updateAnnouncementButton();
     events.emit('status-log', { type: 'info', message: `Process voice ${on ? 'enabled' : 'disabled'}` });
   });
@@ -307,7 +307,7 @@ function buildControls(panel) {
   notificationBtn.addEventListener('click', () => {
     const on = !(window.__app?.desktopNotificationsEnabled !== false);
     if (window.__app) window.__app.desktopNotificationsEnabled = on;
-    localStorage.setItem('alice_desktop_notifications', String(on));
+    localStorage.setItem('ayla_desktop_notifications', String(on));
     updateNotificationButton();
     events.emit('status-log', { type: 'info', message: `Desktop notifications ${on ? 'enabled' : 'disabled'}` });
   });

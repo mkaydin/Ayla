@@ -1,11 +1,13 @@
 [package]
-name = "alice-core"
+name = "ayla-core"
 version = "0.1.0"
 description = "Tauri-independent backend foundation for Ayla"
 edition = "2021"
 rust-version = "1.77.2"
 
 [dependencies]
+ayla-ocr = { path = "../ayla-ocr" }
+ayla-research = { path = "../ayla-research" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"

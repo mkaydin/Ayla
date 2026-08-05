@@ -18,8 +18,10 @@ pub struct MemoryConfig {
     pub qdrant_url: String,
     pub ollama_url: String,
     pub searxng_url: String,
+    pub lightpanda_url: String,
     pub embed_model: String,
     pub llm_model: String,
+    pub ocr_model: String,
     pub ollama_num_ctx: usize,
     /// Total timeout for long Ollama generation requests. Zero disables the
     /// total timeout while retaining a short connection timeout.
@@ -105,21 +107,27 @@ impl Default for MemoryConfig {
         let dotenv = read_dotenv();
         Self {
             surrealdb_url: env_or("http://127.0.0.1:8000", &["SURREALDB_URL"], &dotenv),
-            surrealdb_ns: env_or("alice", &["SURREALDB_NS"], &dotenv),
+            surrealdb_ns: env_or("ayla", &["SURREALDB_NS"], &dotenv),
             surrealdb_db: env_or("memory", &["SURREALDB_DB"], &dotenv),
             surrealdb_user: env_or("root", &["SURREALDB_USER", "SURREAL_USER"], &dotenv),
             surrealdb_pass: env_or("root", &["SURREALDB_PASS", "SURREAL_PASS"], &dotenv),
             qdrant_url: env_or("http://127.0.0.1:6334", &["QDRANT_URL"], &dotenv),
             ollama_url: env_or("http://127.0.0.1:11434", &["OLLAMA_URL"], &dotenv),
             searxng_url: env_or("http://127.0.0.1:8888", &["SEARXNG_URL"], &dotenv),
-            embed_model: env_or("qwen3-embedding:0.6b", &["ALICE_EMBED_MODEL"], &dotenv),
-            llm_model: env_or("gemma4:e4b", &["ALICE_LLM_MODEL"], &dotenv),
+            lightpanda_url: env_or(
+                "ws://127.0.0.1:9222",
+                &["AYLA_LIGHTPANDA_URL", "LIGHTPANDA_URL"],
+                &dotenv,
+            ),
+            embed_model: env_or("qwen3-embedding:0.6b", &["AYLA_EMBED_MODEL"], &dotenv),
+            llm_model: env_or("gemma4:e4b", &["AYLA_LLM_MODEL"], &dotenv),
+            ocr_model: env_or("deepseek-ocr", &["AYLA_OCR_MODEL"], &dotenv),
             // Treat this as the hardware-safe ceiling, not a target for every call.
-            ollama_num_ctx: env_usize(32_768, &["ALICE_OLLAMA_NUM_CTX"], &dotenv),
+            ollama_num_ctx: env_usize(32_768, &["AYLA_OLLAMA_NUM_CTX"], &dotenv),
             // Long cloud generations can legitimately take much longer than five
             // minutes. A zero default deliberately leaves them uncapped.
-            ollama_long_timeout_secs: env_usize(0, &["ALICE_OLLAMA_LONG_TIMEOUT_SECS"], &dotenv),
-            ollama_transport_retries: env_usize(3, &["ALICE_OLLAMA_TRANSPORT_RETRIES"], &dotenv)
+            ollama_long_timeout_secs: env_usize(0, &["AYLA_OLLAMA_LONG_TIMEOUT_SECS"], &dotenv),
+            ollama_transport_retries: env_usize(3, &["AYLA_OLLAMA_TRANSPORT_RETRIES"], &dotenv)
                 .min(10),
             embed_dim: 1024,
             top_k_retrieval: 5,

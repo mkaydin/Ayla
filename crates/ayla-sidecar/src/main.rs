@@ -2,8 +2,8 @@ mod dispatcher;
 mod protocol;
 mod sinks;
 
-use alice_core::commands::BACKEND_METHODS;
-use alice_core::{BackendError, BackendState, EventSink, MemoryConfig, ResourceLocator};
+use ayla_core::commands::BACKEND_METHODS;
+use ayla_core::{BackendError, BackendState, EventSink, MemoryConfig, ResourceLocator};
 use protocol::{read_frame, write_frame, IncomingMessage, OutgoingMessage, PROTOCOL_VERSION};
 use sinks::{ProtocolEventSink, ProtocolStreamSink};
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ async fn main() {
         return;
     }
     if let Err(error) = serve().await {
-        eprintln!("alice-sidecar: {error}");
+        eprintln!("ayla-sidecar: {error}");
         std::process::exit(1);
     }
 }
@@ -31,7 +31,7 @@ async fn serve() -> Result<(), protocol::ProtocolError> {
     let writer = tokio::spawn(async move {
         let mut output = tokio::io::stdout();
         while let Some(message) = output_receiver.recv().await {
-            let _protocol_lock = alice_core::protocol_io_guard().lock().await;
+            let _protocol_lock = ayla_core::protocol_io_guard().lock().await;
             write_frame(&mut output, &message).await?;
         }
         Ok::<(), protocol::ProtocolError>(())
@@ -183,13 +183,13 @@ fn send_output(
 }
 
 fn resource_directory() -> Option<PathBuf> {
-    std::env::var_os("ALICE_RESOURCE_DIR")
+    std::env::var_os("AYLA_RESOURCE_DIR")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
 }
 
 fn development_root() -> PathBuf {
-    std::env::var_os("ALICE_DEVELOPMENT_ROOT")
+    std::env::var_os("AYLA_DEVELOPMENT_ROOT")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../src-tauri"))

@@ -36,7 +36,9 @@ pub const BACKEND_EVENTS: &[&str] = &[
     "ingest-progress",
     "kb-cleanup-progress",
     "ocr-started",
+    "ocr-progress",
     "search-started",
+    "search-progress",
 ];
 
 #[cfg(test)]

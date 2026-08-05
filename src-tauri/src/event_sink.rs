@@ -1,4 +1,4 @@
-use alice_core::{EventSink, StreamSink};
+use ayla_core::{EventSink, StreamSink};
 use serde_json::Value;
 use tauri::Emitter;
 

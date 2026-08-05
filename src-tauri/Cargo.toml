@@ -1,8 +1,8 @@
 [package]
 name = "app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Legacy Tauri host for the Ayla coworker assistant"
+authors = ["Ayla Project"]
 license = ""
 repository = ""
 edition = "2021"
@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.1", features = [] }
 
 [dependencies]
-alice-core = { path = "../crates/alice-core" }
+ayla-core = { path = "../crates/ayla-core" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
@@ -29,20 +29,4 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 sherpa-onnx = { path = "../tts/sherpa-onnx/sherpa-onnx/rust/sherpa-onnx" }
 
-# Memory system
-# Keep this minor aligned with docker-compose.yml. Qdrant only supports clients
-# within one server minor; a broad "1" range can silently become incompatible.
-qdrant-client = { version = "=1.13.0", default-features = false }
-petgraph = { version = "0.6", features = ["serde-1"] }
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
-uuid = { version = "1", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-
-# Tool subprocess
-async-trait = "0.1"
-
-# Quick Extract: file format readers
-pdf-extract = "0.7"
-quick-xml = "0.37"
-zip = "2.2"

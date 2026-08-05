@@ -1,45 +1,7 @@
-// ── Meta Search tool: subprocess wrapper for meta_search ───
+// ── Scientific research tool ───
 
 use super::types::*;
 use super::IngestTool;
-use std::path::PathBuf;
-use tokio::process::Command;
-
-/// Extract the final JSON object from `meta_search` stdout.
-///
-/// The external binary prints banners and tracing output before its JSON report. Some
-/// Lightpanda log messages contain their own JSON objects, so selecting the first `{`
-/// parses a CDP error instead of the report. Walking object starts from the end ensures
-/// we select the complete, final JSON document.
-pub fn parse_meta_search_stdout(stdout: &str) -> Result<serde_json::Value, String> {
-    let trimmed = stdout.trim();
-    let mut last_error = None;
-
-    for (index, character) in trimmed.char_indices().rev() {
-        if character != '{' {
-            continue;
-        }
-        match serde_json::from_str::<serde_json::Value>(trimmed[index..].trim()) {
-            Ok(value) if value.is_object() => return Ok(value),
-            Ok(_) => {}
-            Err(error) => last_error = Some(error),
-        }
-    }
-
-    let detail = last_error
-        .map(|error| error.to_string())
-        .unwrap_or_else(|| "no JSON object found".to_string());
-    Err(format!(
-        "Meta Search returned no valid final JSON report: {} (output tail: {})",
-        detail,
-        crate::memory::safe_truncate(
-            trimmed
-                .get(trimmed.len().saturating_sub(240)..)
-                .unwrap_or(trimmed),
-            240,
-        )
-    ))
-}
 
 fn report_array<'a>(report: &'a serde_json::Value, key: &str) -> &'a [serde_json::Value] {
     report
@@ -169,24 +131,11 @@ pub fn build_knowledge_document(query: &str, report: &serde_json::Value) -> Stri
     document
 }
 
-pub struct MetaSearchTool {
-    bin_path: PathBuf,
-}
+pub struct MetaSearchTool;
 
 impl MetaSearchTool {
     pub fn new() -> Self {
-        Self {
-            bin_path: Self::find_binary(),
-        }
-    }
-
-    fn find_binary() -> PathBuf {
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let external = base.join("../../../meta_search_Js_render/target/release/meta_search");
-        if external.exists() {
-            return external.canonicalize().unwrap_or(external);
-        }
-        PathBuf::from("meta_search")
+        Self
     }
 }
 
@@ -197,49 +146,40 @@ impl IngestTool for MetaSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Searches scientific literature across multiple engines, downloads and analyzes papers."
+        "Searches, downloads, and analyzes scientific literature with Ayla's in-process research engine."
     }
 
     async fn is_available(&self) -> bool {
-        let ok = self.bin_path.exists();
-        if !ok {
-            log::warn!("Meta Search tool not found at {:?}. Build it: cd ../meta_search_Js_render && cargo build --release", self.bin_path);
-        }
-        ok
+        true
     }
 
     async fn run(&self, query: &str, _file_path: Option<&str>) -> Result<IngestionResult, String> {
-        let model = std::env::var("ALICE_LLM_MODEL")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "gemma4:e4b".to_string());
-        let output = Command::new(&self.bin_path)
-            .args([
-                "-j",
-                "-n",
-                "10",
-                "--model",
-                &model,
-                "--searxng-url",
-                "http://127.0.0.1:8888",
-                "--lightpanda-url",
-                "ws://127.0.0.1:9222",
-                query,
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run meta_search: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "meta_search failed: {}",
-                stderr.lines().last().unwrap_or("unknown error")
-            ));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let parsed = parse_meta_search_stdout(&stdout)?;
+        let config = crate::MemoryConfig::default();
+        let data_dir = std::env::var_os("AYLA_DATA_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .unwrap_or_else(|_| std::env::temp_dir())
+                    .join("ayla-data")
+            })
+            .join("research");
+        let report = ayla_research::search(
+            query,
+            ayla_research::ResearchOptions {
+                searxng_url: config.searxng_url,
+                lightpanda_url: config.lightpanda_url,
+                ollama_url: config.ollama_url,
+                model: config.llm_model,
+                max_num_ctx: config.ollama_num_ctx,
+                request_timeout_secs: config.ollama_long_timeout_secs as u64,
+                max_papers: 10,
+                search_pages: 2,
+                data_dir,
+            },
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+        let parsed = serde_json::to_value(report).map_err(|error| error.to_string())?;
 
         let mut full_text = build_knowledge_document(query, &parsed);
 
@@ -283,7 +223,7 @@ impl IngestTool for MetaSearchTool {
             relations: vec![],
             full_text,
             source: SourceInfo {
-                tool: "meta_search".into(),
+                tool: "ayla_research".into(),
                 input: query.into(),
                 output_path: None,
                 metadata: serde_json::json!({"query": query}),
@@ -295,35 +235,7 @@ impl IngestTool for MetaSearchTool {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_knowledge_document, parse_meta_search_stdout};
-
-    #[test]
-    fn parses_final_report_after_json_shaped_log_messages() {
-        let output = concat!(
-            "Meta Search banner\n",
-            "WARN CDP error: {\"code\":-31998,\"message\":\"BrowserContextNotLoaded\"}\n",
-            "{\"session_id\":\"session-1\",\"query\":\"graph theory\",",
-            "\"papers_analyzed\":[],\"synthesis\":{\"summary\":\"Connected concepts\"}}\n"
-        );
-
-        let parsed = parse_meta_search_stdout(output).expect("final report should parse");
-        assert_eq!(parsed["session_id"], "session-1");
-        assert_eq!(parsed["synthesis"]["summary"], "Connected concepts");
-    }
-
-    #[test]
-    #[ignore = "requires ALICE_META_SEARCH_FIXTURE pointing to captured Meta Search stdout"]
-    fn parses_captured_meta_search_output() {
-        let path = std::env::var("ALICE_META_SEARCH_FIXTURE")
-            .expect("set ALICE_META_SEARCH_FIXTURE to a captured stdout file");
-        let output = std::fs::read_to_string(path).expect("read Meta Search fixture");
-        let parsed = parse_meta_search_stdout(&output).expect("captured report should parse");
-        assert!(parsed.get("session_id").is_some());
-        assert!(parsed
-            .get("papers_analyzed")
-            .and_then(serde_json::Value::as_array)
-            .is_some());
-    }
+    use super::build_knowledge_document;
 
     #[test]
     fn knowledge_document_retains_structure_and_provenance() {

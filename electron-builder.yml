@@ -15,12 +15,8 @@ files:
 extraResources:
   - from: electron/assets/icon.png
     to: assets/icon.png
-  - from: .electron-resources/bin/alice-sidecar
-    to: bin/alice-sidecar
-  - from: .electron-resources/tools/ocr-helper
-    to: tools/ocr-helper
-  - from: .electron-resources/tools/meta_search
-    to: tools/meta_search
+  - from: .electron-resources/bin/ayla-sidecar
+    to: bin/ayla-sidecar
   - from: tts/tts_piper_amy_low
     to: tts/tts_piper_amy_low
 asar: true

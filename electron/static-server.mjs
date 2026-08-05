@@ -124,13 +124,13 @@ export async function startStaticServer(distDirectory, { modelDirectory = null }
       return;
     }
 
-    if (request.url?.startsWith('/__alice_model__/')) {
+    if (request.url?.startsWith('/__ayla_model__/')) {
       if (!modelRoot) {
         response.writeHead(404, SECURITY_HEADERS);
         response.end('Mk6 model directory is not configured');
         return;
       }
-      const modelUrl = request.url.replace(/^\/__alice_model__/, '') || '/';
+      const modelUrl = request.url.replace(/^\/__ayla_model__/, '') || '/';
       let modelPath;
       try {
         modelPath = safeModelFilePath(modelRoot, modelUrl);

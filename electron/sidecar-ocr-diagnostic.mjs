@@ -28,14 +28,15 @@ function listPdfs(directory) {
 }
 
 function selectFixture() {
-  if (process.env.ALICE_OCR_FIXTURE) return path.resolve(process.env.ALICE_OCR_FIXTURE);
-  const downloads = path.resolve(root, '..', 'meta_search_Js_render', 'downloads');
+  if (process.env.AYLA_OCR_FIXTURE) return path.resolve(process.env.AYLA_OCR_FIXTURE);
+  const dataRoot = process.env.AYLA_DATA_DIR || path.join(root, 'ayla-data');
+  const downloads = path.join(dataRoot, 'research', 'downloads');
   const candidates = listPdfs(downloads)
     .map(filePath => ({ filePath, bytes: statSync(filePath).size }))
     .sort((left, right) => left.bytes - right.bytes);
   if (!candidates.length) {
     throw new Error(
-      'No OCR fixture found. Set ALICE_OCR_FIXTURE to a local PDF or run a paper search first.',
+      'No OCR fixture found. Set AYLA_OCR_FIXTURE to a local PDF or run a paper search first.',
     );
   }
   return candidates[0].filePath;
@@ -44,7 +45,7 @@ function selectFixture() {
 function temporaryOcrOutputs() {
   return new Set(
     readdirSync('/tmp')
-      .filter(name => /^alice_ocr_.*\.md$/.test(name))
+      .filter(name => /^ayla-ocr-/.test(name))
       .map(name => path.join('/tmp', name)),
   );
 }
@@ -56,7 +57,8 @@ const manager = new SidecarManager({
   cwd: root,
   env: {
     ...process.env,
-    ALICE_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
+    AYLA_DATA_DIR: process.env.AYLA_DATA_DIR || path.join(root, 'ayla-data'),
+    AYLA_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
   },
   startupTimeout: 60_000,
   restartLimit: 0,

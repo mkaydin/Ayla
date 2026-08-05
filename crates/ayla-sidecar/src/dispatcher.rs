@@ -1,4 +1,4 @@
-use alice_core::{BackendError, BackendState, EventSink, StreamSink};
+use ayla_core::{BackendError, BackendState, EventSink, StreamSink};
 use rmpv::Value;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -337,8 +337,8 @@ struct GenerateTtsParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alice_core::commands::BACKEND_METHODS;
-    use alice_core::{MemoryConfig, NoopEventSink, NoopStreamSink, ResourceLocator};
+    use ayla_core::commands::BACKEND_METHODS;
+    use ayla_core::{MemoryConfig, NoopEventSink, NoopStreamSink, ResourceLocator};
     use std::sync::Arc;
 
     fn offline_state() -> BackendState {

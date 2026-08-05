@@ -6,6 +6,7 @@
 /release/
 /.electron-resources/
 /src-tauri/target/
+/target/
 /src-tauri/gen/
 /crates/*/target/
 /crates/*/Cargo.lock

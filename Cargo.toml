@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "crates/ayla-core",
+    "crates/ayla-ocr",
+    "crates/ayla-research",
+    "crates/ayla-sidecar",
+]
+resolver = "2"
+exclude = ["src-tauri", "tts/sherpa-onnx/sherpa-onnx/rust/sherpa-onnx"]

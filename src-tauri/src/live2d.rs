@@ -12,7 +12,7 @@ fn is_safe_relative_path(path: &Path) -> bool {
 
 fn model_roots(app: &AppHandle) -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    if let Some(configured) = std::env::var_os("ALICE_LIVE2D_MODEL_DIR") {
+    if let Some(configured) = std::env::var_os("AYLA_LIVE2D_MODEL_DIR") {
         roots.push(PathBuf::from(configured));
     }
     if let Ok(current) = std::env::current_dir() {
@@ -76,7 +76,7 @@ pub async fn read_live2d_asset(
     }
 
     Err(
-        "Mk6 model is unavailable. Install Mk6_1.0, set ALICE_LIVE2D_MODEL_DIR, or copy it to the Ayla app-data directory."
+        "Mk6 model is unavailable. Install Mk6_1.0, set AYLA_LIVE2D_MODEL_DIR, or copy it to the Ayla app-data directory."
             .into(),
     )
 }

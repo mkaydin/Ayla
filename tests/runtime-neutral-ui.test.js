@@ -18,7 +18,7 @@ test('feature UI modules depend only on the runtime-neutral desktop adapter', ()
   const forbidden = [
     ['direct Tauri package import', /@tauri-apps/],
     ['direct Tauri global access', /__TAURI/],
-    ['direct Electron preload access', /window\.aliceDesktop/],
+    ['direct Electron preload access', /window\.aylaDesktop/],
     ['raw IPC implementation access', /\bgetIpc\b/],
     ['direct Ollama proxy access', /\/api\/ollama/],
   ];

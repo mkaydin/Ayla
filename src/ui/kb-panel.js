@@ -23,8 +23,8 @@ let graphDataSignature = '';
 let cleanupRunning = false;
 let cleanupStatus = '';
 
-const GRAPH_LAYOUT_STORAGE_KEY = 'alice_kb_graph_layout';
-const GRAPH_POSITION_STORAGE_KEY = 'alice_kb_gravity_positions_v1';
+const GRAPH_LAYOUT_STORAGE_KEY = 'ayla_kb_graph_layout';
+const GRAPH_POSITION_STORAGE_KEY = 'ayla_kb_gravity_positions_v1';
 const GRAPH_LAYOUT_CLASSIC = 'classic';
 const GRAPH_LAYOUT_GRAVITY = 'gravity';
 const GRAPH_COLORS = ['#38bdf8','#22d3ee','#2dd4bf','#60a5fa','#34d399','#67e8f9','#4ade80','#93c5fd','#14b8a6','#7dd3fc'];
@@ -455,7 +455,7 @@ function requestGravityLayout(container, { reset = false, fit = true } = {}) {
   try {
     gravityWorker = new Worker(
       new URL('../workers/kb-gravity.worker.js', import.meta.url),
-      { type: 'module', name: 'alice-kb-gravity-layout' },
+      { type: 'module', name: 'ayla-kb-gravity-layout' },
     );
   } catch (error) {
     updateGravityStatus(`Relationship layout unavailable: ${error?.message || error}`);

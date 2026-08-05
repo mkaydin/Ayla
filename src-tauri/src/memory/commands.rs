@@ -1,9 +1,9 @@
-//! Thin Tauri IPC adapters for `alice_core::BackendApi`.
+//! Thin Tauri IPC adapters for `ayla_core::BackendApi`.
 
 use crate::event_sink::TauriChannelStreamSink;
 use crate::memory::MemoryManager;
 use crate::processes::ProcessRegistry;
-use alice_core::{BackendApi, BackendFoundation};
+use ayla_core::{BackendApi, BackendFoundation};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::State;

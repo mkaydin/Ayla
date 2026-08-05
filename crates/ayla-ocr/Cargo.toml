@@ -1,0 +1,19 @@
+[package]
+name = "ayla-ocr"
+version = "0.1.0"
+description = "In-process PDF OCR engine for Ayla"
+edition = "2021"
+rust-version = "1.77.2"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+chrono = "0.4"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+pdfium-bundled = "0.1"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+

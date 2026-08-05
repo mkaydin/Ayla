@@ -27,7 +27,7 @@ import { startStaticServer } from './static-server.mjs';
 const electronDirectory = dirname(fileURLToPath(import.meta.url));
 const projectDirectory = dirname(electronDirectory);
 const preloadPath = join(electronDirectory, 'preload.cjs');
-const developmentUrl = process.env.ALICE_ELECTRON_DEV_URL || '';
+const developmentUrl = process.env.AYLA_ELECTRON_DEV_URL || '';
 const iconPath = join(
   app.isPackaged ? process.resourcesPath : projectDirectory,
   ...(app.isPackaged ? ['assets'] : ['electron', 'assets']),
@@ -37,7 +37,7 @@ app.setName('Ayla');
 
 function findLocalModelDirectory() {
   const candidates = [
-    process.env.ALICE_LIVE2D_MODEL_DIR,
+    process.env.AYLA_LIVE2D_MODEL_DIR,
     join(process.cwd(), 'Mk6_1.0'),
     join(projectDirectory, 'Mk6_1.0'),
     join(dirname(app.getPath('exe')), 'Mk6_1.0'),
@@ -57,7 +57,9 @@ const FORWARDED_BACKEND_EVENTS = new Set([
   'ingest-progress',
   'kb-cleanup-progress',
   'ocr-started',
+  'ocr-progress',
   'search-started',
+  'search-progress',
 ]);
 
 function assertTrustedSender(event) {
@@ -78,7 +80,7 @@ function focusNotificationTarget(payload) {
   if (applicationWindow.isMinimized()) applicationWindow.restore();
   applicationWindow.show();
   applicationWindow.focus();
-  applicationWindow.webContents.send('alice:event:notification-clicked', {
+  applicationWindow.webContents.send('ayla:event:notification-clicked', {
     target: payload.target,
     operationId: payload.operationId,
   });
@@ -129,7 +131,7 @@ function showDesktopNotification(rawPayload) {
 }
 
 function createSidecar() {
-  const binaryPath = process.env.ALICE_SIDECAR_BIN || (
+  const binaryPath = process.env.AYLA_SIDECAR_BIN || (
     app.isPackaged
       ? packagedSidecarPath(process.resourcesPath)
       : developmentSidecarPath(projectDirectory)
@@ -140,15 +142,16 @@ function createSidecar() {
     cwd: app.isPackaged ? app.getPath('userData') : projectDirectory,
     env: {
       ...process.env,
-      ...(resourceDirectory ? { ALICE_RESOURCE_DIR: resourceDirectory } : {}),
+      AYLA_DATA_DIR: app.getPath('userData'),
+      ...(resourceDirectory ? { AYLA_RESOURCE_DIR: resourceDirectory } : {}),
       ...(!app.isPackaged
-        ? { ALICE_DEVELOPMENT_ROOT: join(projectDirectory, 'src-tauri') }
+        ? { AYLA_DEVELOPMENT_ROOT: join(projectDirectory, 'src-tauri') }
         : {}),
     },
   });
   backend.on('status', status => {
     if (applicationWindow && !applicationWindow.isDestroyed()) {
-      applicationWindow.webContents.send('alice:backend-status-changed', status);
+      applicationWindow.webContents.send('ayla:backend-status-changed', status);
     }
   });
   backend.on('backend-event', message => {
@@ -160,16 +163,16 @@ function createSidecar() {
     const payload = message.payload && typeof message.payload === 'object'
       ? { ...message.payload, requestId: message.operation_id ?? null }
       : { value: message.payload, requestId: message.operation_id ?? null };
-    applicationWindow.webContents.send(`alice:event:${message.name}`, payload);
+    applicationWindow.webContents.send(`ayla:event:${message.name}`, payload);
   });
   backend.on('stderr', chunk => {
-    if (process.env.ALICE_SIDECAR_LOG === '1') process.stderr.write(`[alice-sidecar] ${chunk}`);
+    if (process.env.AYLA_SIDECAR_LOG === '1') process.stderr.write(`[ayla-sidecar] ${chunk}`);
   });
   return backend;
 }
 
 function registerIpcHandlers() {
-  ipcMain.handle('alice:runtime-info', event => {
+  ipcMain.handle('ayla:runtime-info', event => {
     assertTrustedSender(event);
     return {
       runtime: 'electron',
@@ -181,7 +184,7 @@ function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle('alice:backend-status', event => {
+  ipcMain.handle('ayla:backend-status', event => {
     assertTrustedSender(event);
     return sidecar?.snapshot() ?? {
       state: 'stopped',
@@ -190,14 +193,14 @@ function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle('alice:invoke', async (event, command, args = {}) => {
+  ipcMain.handle('ayla:invoke', async (event, command, args = {}) => {
     assertTrustedSender(event);
     validateBackendCall(command, args);
     if (!sidecar) throw new Error('Rust backend has not been initialized');
     return sidecar.request(command, args, { ownerId: event.sender.id });
   });
 
-  ipcMain.handle('alice:request-start', async (event, requestId, command, args = {}) => {
+  ipcMain.handle('ayla:request-start', async (event, requestId, command, args = {}) => {
     assertTrustedSender(event);
     validateRequestId(requestId);
     validateBackendCall(command, args);
@@ -208,7 +211,7 @@ function registerIpcHandlers() {
     });
   });
 
-  ipcMain.handle('alice:request-cancel', (event, requestId) => {
+  ipcMain.handle('ayla:request-cancel', (event, requestId) => {
     assertTrustedSender(event);
     validateRequestId(requestId);
     return sidecar?.cancelRequest(
@@ -218,7 +221,7 @@ function registerIpcHandlers() {
     ) ?? false;
   });
 
-  ipcMain.handle('alice:stream-start', async (event, streamId, command, args = {}) => {
+  ipcMain.handle('ayla:stream-start', async (event, streamId, command, args = {}) => {
     assertTrustedSender(event);
     validateBackendCall(command, args);
     validateRequestId(streamId);
@@ -228,12 +231,12 @@ function registerIpcHandlers() {
       ownerId: sender.id,
       requestId: streamId,
       onStream: payload => {
-        if (!sender.isDestroyed()) sender.send(`alice:stream:${streamId}`, payload);
+        if (!sender.isDestroyed()) sender.send(`ayla:stream:${streamId}`, payload);
       },
     });
   });
 
-  ipcMain.handle('alice:stream-cancel', (event, streamId) => {
+  ipcMain.handle('ayla:stream-cancel', (event, streamId) => {
     assertTrustedSender(event);
     validateRequestId(streamId);
     return sidecar?.cancelRequest(
@@ -243,13 +246,13 @@ function registerIpcHandlers() {
     ) ?? false;
   });
 
-  ipcMain.handle('alice:backend-restart', async event => {
+  ipcMain.handle('ayla:backend-restart', async event => {
     assertTrustedSender(event);
     if (!sidecar) throw new Error('Rust backend has not been initialized');
     return sidecar.restart();
   });
 
-  ipcMain.on('alice:renderer-dispose', event => {
+  ipcMain.on('ayla:renderer-dispose', event => {
     try {
       assertTrustedSender(event);
       sidecar?.cancelOwner(event.sender.id);
@@ -258,14 +261,14 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('alice:select-files', async (event, options) => {
+  ipcMain.handle('ayla:select-files', async (event, options) => {
     assertTrustedSender(event);
     const owner = BrowserWindow.fromWebContents(event.sender) || applicationWindow;
     const result = await dialog.showOpenDialog(owner, normalizeDialogOptions(options));
     return result.canceled ? [] : result.filePaths;
   });
 
-  ipcMain.handle('alice:open-path', async (event, filePath) => {
+  ipcMain.handle('ayla:open-path', async (event, filePath) => {
     assertTrustedSender(event);
     if (typeof filePath !== 'string' || filePath.length === 0 || filePath.length > 4096) {
       throw new TypeError('A valid local path is required');
@@ -274,7 +277,7 @@ function registerIpcHandlers() {
     if (error) throw new Error(error);
   });
 
-  ipcMain.handle('alice:show-notification', (event, payload) => {
+  ipcMain.handle('ayla:show-notification', (event, payload) => {
     assertTrustedSender(event);
     return showDesktopNotification(payload);
   });

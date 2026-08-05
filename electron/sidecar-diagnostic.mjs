@@ -13,7 +13,7 @@ const manager = new SidecarManager({
   cwd: root,
   env: {
     ...process.env,
-    ALICE_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
+    AYLA_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
   },
   startupTimeout: 5_000,
 });

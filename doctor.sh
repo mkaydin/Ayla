@@ -93,10 +93,10 @@ else
 
   # Check each container
   declare -A CONTAINERS=(
-    ["alice-surrealdb"]="SurrealDB"
-    ["alice-qdrant"]="Qdrant"
-    ["alice-searxng"]="SearXNG"
-    ["alice-lightpanda"]="Lightpanda"
+    ["ayla-surrealdb"]="SurrealDB"
+    ["ayla-qdrant"]="Qdrant"
+    ["ayla-searxng"]="SearXNG"
+    ["ayla-lightpanda"]="Lightpanda"
   )
 
   for cname in "${!CONTAINERS[@]}"; do
@@ -240,7 +240,7 @@ if [ "$WARN_COUNT" -gt 0 ]; then
   log_info "$WARN_COUNT compiler warnings (non-blocking)"
 fi
 
-# Shared backend module presence. Business logic moved to alice-core during the
+# Shared backend module presence. Business logic moved to ayla-core during the
 # Electron migration; src-tauri now contains only the thin host adapters.
 for mod in "memory/mod.rs" "config.rs" \
            "memory/conversation.rs" "memory/semantic.rs" "memory/graph.rs" \
@@ -251,10 +251,10 @@ for mod in "memory/mod.rs" "config.rs" \
            "db/mod.rs" "db/surreal.rs" "db/qdrant.rs" \
            "tools/mod.rs" "tools/types.rs" "tools/ocr.rs" "tools/meta_search.rs" \
            "tools/quick_extract.rs"; do
-  if [ -f "$SCRIPT_DIR/crates/alice-core/src/$mod" ]; then
+  if [ -f "$SCRIPT_DIR/crates/ayla-core/src/$mod" ]; then
     : # silent pass
   else
-    log_fail "Missing alice-core module: $mod" "File was deleted"
+    log_fail "Missing ayla-core module: $mod" "File was deleted"
   fi
 done
 [ -f "$SCRIPT_DIR/src-tauri/src/memory/commands.rs" ] \
@@ -274,16 +274,12 @@ else
   log_fail "Tauri command registration incomplete" "Check src/lib.rs"
 fi
 
-# Tool binaries (optional)
-for tool in "ocr_helper_system:ocr-helper:ocr_helper" "meta_search_Js_render:meta_search:meta_search"; do
-  IFS=':' read -r proj bin label <<< "$tool"
-  bin_path="$SCRIPT_DIR/../$proj/target/release/$bin"
-  if [ -f "$bin_path" ]; then
-    log_info "$label binary found (optional)"
-  else
-    log_skip "$label binary not built (optional — cd ../$proj && cargo build --release)"
-  fi
-done
+[ -f "$SCRIPT_DIR/crates/ayla-ocr/src/lib.rs" ] \
+  && log_pass "In-process OCR crate available" \
+  || log_fail "Missing ayla-ocr crate" "Check crates/ayla-ocr"
+[ -f "$SCRIPT_DIR/crates/ayla-research/src/lib.rs" ] \
+  && log_pass "In-process research crate available" \
+  || log_fail "Missing ayla-research crate" "Check crates/ayla-research"
 
 cd "$SCRIPT_DIR"
 
@@ -384,12 +380,12 @@ for pattern in "data/" "node_modules" "dist/" "src-tauri/target"; do
 done
 
 # Licensed Live2D model files are installed locally and intentionally gitignored.
-LIVE2D_MODEL_DIR="${ALICE_LIVE2D_MODEL_DIR:-$SCRIPT_DIR/Mk6_1.0}"
+LIVE2D_MODEL_DIR="${AYLA_LIVE2D_MODEL_DIR:-$SCRIPT_DIR/Mk6_1.0}"
 for model_file in "Mk6.model3.json" "Mk6.moc3" "Mk6.physics3.json"; do
   if [ -f "$LIVE2D_MODEL_DIR/$model_file" ]; then
     : # silent
   else
-    log_fail "Missing Live2D: $model_file" "Install Mk6_1.0 or set ALICE_LIVE2D_MODEL_DIR"
+    log_fail "Missing Live2D: $model_file" "Install Mk6_1.0 or set AYLA_LIVE2D_MODEL_DIR"
   fi
 done
 
@@ -428,7 +424,7 @@ if [ "$QUICK" = false ] && [ "$NO_DOCKER" = false ]; then
       -H "Content-Type: application/json" \
       -H "Accept: application/json" \
       -u "root:root" \
-      -d '{"ns":"alice","db":"memory","sql":"SELECT * FROM fact LIMIT 1"}' 2>/dev/null || echo "")
+      -d '{"ns":"ayla","db":"memory","sql":"SELECT * FROM fact LIMIT 1"}' 2>/dev/null || echo "")
     if [ -n "$RESULT" ]; then
       log_pass "SurrealDB query — responded"
     else
@@ -440,7 +436,7 @@ if [ "$QUICK" = false ] && [ "$NO_DOCKER" = false ]; then
       -H "Content-Type: application/json" \
       -H "Accept: application/json" \
       -u "root:root" \
-      -d '{"ns":"alice","db":"memory","sql":"INFO FOR DB;"}' 2>/dev/null | jq -r '.[0].result.tables | keys | join(", ")' 2>/dev/null || echo "")
+      -d '{"ns":"ayla","db":"memory","sql":"INFO FOR DB;"}' 2>/dev/null | jq -r '.[0].result.tables | keys | join(", ")' 2>/dev/null || echo "")
     if [ -n "$TABLES" ]; then
       log_info "SurrealDB tables: $TABLES"
     fi

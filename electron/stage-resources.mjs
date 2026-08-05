@@ -23,24 +23,10 @@ export function resourceManifest({
   return [
     {
       name: 'Rust sidecar',
-      source: env.ALICE_SIDECAR_BIN
-        || path.join(root, 'crates', 'alice-sidecar', 'target', 'release', `alice-sidecar${executableSuffix}`),
-      destination: path.join(stageDirectory, 'bin', `alice-sidecar${executableSuffix}`),
+      source: env.AYLA_SIDECAR_BIN
+        || path.join(root, 'target', 'release', `ayla-sidecar${executableSuffix}`),
+      destination: path.join(stageDirectory, 'bin', `ayla-sidecar${executableSuffix}`),
       buildHint: 'npm run sidecar:build:release',
-    },
-    {
-      name: 'OCR helper',
-      source: env.ALICE_OCR_BIN
-        || path.resolve(root, '..', 'ocr_helper_system', 'target', 'release', `ocr-helper${executableSuffix}`),
-      destination: path.join(stageDirectory, 'tools', `ocr-helper${executableSuffix}`),
-      buildHint: '(cd ../ocr_helper_system && cargo build --release)',
-    },
-    {
-      name: 'Meta Search helper',
-      source: env.ALICE_SEARCH_BIN
-        || path.resolve(root, '..', 'meta_search_Js_render', 'target', 'release', `meta_search${executableSuffix}`),
-      destination: path.join(stageDirectory, 'tools', `meta_search${executableSuffix}`),
-      buildHint: '(cd ../meta_search_Js_render && cargo build --release)',
     },
   ];
 }

@@ -7,7 +7,7 @@ import {
 } from './sidecar-manager.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
-const sessionId = `alice-phase3-diagnostic-${randomUUID()}`;
+const sessionId = `ayla-phase3-diagnostic-${randomUUID()}`;
 const title = 'Ayla Phase 3 mutation diagnostic';
 const messages = [
   { role: 'user', content: 'Verify Electron to Rust mutation parity.' },
@@ -18,7 +18,7 @@ const manager = new SidecarManager({
   cwd: root,
   env: {
     ...process.env,
-    ALICE_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
+    AYLA_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
   },
   startupTimeout: 60_000,
   restartLimit: 0,
