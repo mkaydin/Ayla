@@ -218,7 +218,19 @@ export function initChatPanel(applyExpressionFn) {
 
     const thinkDiv = document.createElement('div');
     thinkDiv.className = 'msg model streaming';
-    thinkDiv.textContent = '\u23F3';
+    const thinkingWrap = document.createElement('div');
+    thinkingWrap.className = 'chat-thinking';
+    thinkingWrap.hidden = true;
+    const thinkingLabel = document.createElement('div');
+    thinkingLabel.className = 'chat-thinking-label';
+    thinkingLabel.textContent = 'Thinking';
+    const thinkingBody = document.createElement('div');
+    thinkingBody.className = 'chat-thinking-body';
+    thinkingWrap.append(thinkingLabel, thinkingBody);
+    const responseDiv = document.createElement('div');
+    responseDiv.className = 'chat-response';
+    responseDiv.textContent = '\u23F3';
+    thinkDiv.append(thinkingWrap, responseDiv);
     msgContainer.appendChild(thinkDiv);
 
     sendBtn.disabled = false;
@@ -248,11 +260,22 @@ export function initChatPanel(applyExpressionFn) {
 
     try {
       let raw = '', tagDone = false, displayText = '';
+      let thinkingText = '';
       let exprApplied = false;
       let renderScheduled = false;
       let lastRenderAt = 0;
       const speechStream = new MarkdownSpeechStream();
-      thinkDiv.textContent = '';
+      responseDiv.textContent = '';
+
+      function consumeThinking(content) {
+        if (!content) return;
+        thinkingText += content;
+        thinkingBody.textContent = thinkingText;
+        thinkingWrap.hidden = false;
+        // Keep the newest reasoning visible without causing a full Markdown
+        // parse or sending any reasoning text to the TTS queue.
+        thinkingBody.scrollTop = thinkingBody.scrollHeight;
+      }
 
       const scheduleSpeech = (content) => {
         for (const segment of speechStream.push(content)) {
@@ -268,7 +291,7 @@ export function initChatPanel(applyExpressionFn) {
         requestAnimationFrame(() => {
           const wait = Math.max(0, 50 - (performance.now() - lastRenderAt));
           setTimeout(() => {
-            thinkDiv.innerHTML = renderMarkdown(displayText);
+            responseDiv.innerHTML = renderMarkdown(displayText);
             msgContainer.scrollTop = msgContainer.scrollHeight;
             lastRenderAt = performance.now();
             renderScheduled = false;
@@ -303,7 +326,7 @@ export function initChatPanel(applyExpressionFn) {
             tagDone = true;
             displayText = raw;
             scheduleSpeech(raw);
-            thinkDiv.textContent = raw;
+            responseDiv.textContent = raw;
             return;
           }
           if (raw.length > 25) {
@@ -311,7 +334,7 @@ export function initChatPanel(applyExpressionFn) {
             tagDone = true;
             displayText = raw;
             scheduleSpeech(raw);
-            thinkDiv.textContent = raw;
+            responseDiv.textContent = raw;
             return;
           }
         } else {
@@ -322,6 +345,7 @@ export function initChatPanel(applyExpressionFn) {
       }
 
       streamOperation = invokeStreamCancelable('stream_chat', { messages: msgs }, (event) => {
+        if (event?.type === 'thinking') consumeThinking(event.content);
         if (event?.type === 'delta') consumeDelta(event.content);
       });
       if (streamCancelRequested) await streamOperation.cancel().catch(() => false);
@@ -344,14 +368,14 @@ export function initChatPanel(applyExpressionFn) {
           scheduleSpeech(displayText);
         }
       }
-      thinkDiv.innerHTML = displayText ? renderMarkdown(displayText) : '';
+      responseDiv.innerHTML = displayText ? renderMarkdown(displayText) : '';
 
-      if (!thinkDiv.textContent.trim() && !thinkDiv.innerHTML.trim()) {
-        thinkDiv.textContent = '(no response)';
+      if (!responseDiv.textContent.trim() && !responseDiv.innerHTML.trim()) {
+        responseDiv.textContent = '(no response)';
       }
 
       // Store the cleaned response (strip any residual expression tag — issue M1).
-      const raw0Final = displayText.trim() || thinkDiv.textContent.trim() || raw.trim();
+      const raw0Final = displayText.trim() || responseDiv.textContent.trim() || raw.trim();
       const finalText = stripTag(raw0Final).displayText.trim();
       addMessage('assistant', finalText);
 
@@ -368,11 +392,11 @@ export function initChatPanel(applyExpressionFn) {
 
     } catch (e) {
       if (e.name === 'AbortError' || e.code === 'request_cancelled') {
-        thinkDiv.textContent = '(cancelled)';
+        responseDiv.textContent = '(cancelled)';
         applyExpressionFn?.('Tired', 3_000);
       } else {
-        thinkDiv.textContent = 'Error: ' + e.message;
-        thinkDiv.style.color = '#f87171';
+        responseDiv.textContent = 'Error: ' + e.message;
+        responseDiv.style.color = '#f87171';
         applyExpressionFn?.('Confused', 4_500);
       }
     } finally {

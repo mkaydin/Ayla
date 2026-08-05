@@ -1369,6 +1369,22 @@ fn emit_chat_delta(line: &[u8], stream: &dyn StreamSink) -> Result<(), BackendEr
 }
 
 fn emit_chat_delta_value(value: &Value, stream: &dyn StreamSink) -> Result<(), BackendError> {
+    // Reasoning-capable Ollama models (for example Nemotron) stream their
+    // internal working separately from the answer. Forward it as a distinct
+    // event so hosts can make it visible without treating it as answer text.
+    let thinking = value
+        .get("message")
+        .and_then(|message| message.get("thinking"))
+        .or_else(|| value.get("thinking"))
+        .and_then(Value::as_str);
+    if let Some(thinking) = thinking {
+        if !thinking.is_empty() {
+            stream
+                .send(serde_json::json!({ "type": "thinking", "content": thinking }))
+                .map_err(chat_stream_error)?;
+        }
+    }
+
     if let Some(content) = value
         .get("message")
         .and_then(|message| message.get("content"))
@@ -1669,16 +1685,25 @@ mod tests {
     }
 
     #[test]
-    fn chat_stream_parser_emits_only_nonempty_deltas() {
+    fn chat_stream_parser_emits_thinking_and_nonempty_deltas() {
         let stream = RecordingStream::default();
+        emit_chat_delta(
+            br#"{"message":{"thinking":"checking the problem"},"done":false}"#,
+            &stream,
+        )
+        .unwrap();
         emit_chat_delta(br#"{"message":{"content":"hello"},"done":false}"#, &stream).unwrap();
         emit_chat_delta(br#"{"message":{"content":""},"done":false}"#, &stream).unwrap();
         emit_chat_delta(br#"{"done":true}"#, &stream).unwrap();
 
         let messages = stream.messages.lock().unwrap();
-        assert_eq!(messages.len(), 1);
+        assert_eq!(messages.len(), 2);
         assert_eq!(
             messages[0],
+            serde_json::json!({"type": "thinking", "content": "checking the problem"})
+        );
+        assert_eq!(
+            messages[1],
             serde_json::json!({"type": "delta", "content": "hello"})
         );
         drop(messages);

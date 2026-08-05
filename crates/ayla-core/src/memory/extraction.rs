@@ -574,13 +574,7 @@ fn parse_knowledge(
     document_name: Option<&str>,
 ) -> Result<KnowledgeExtract, String> {
     let cleaned = response.trim();
-    let json_str = if let (Some(start), Some(end)) = (cleaned.find('{'), cleaned.rfind('}')) {
-        &cleaned[start..=end]
-    } else {
-        return Err("Extraction response did not contain a JSON object".to_string());
-    };
-    let object: Value =
-        serde_json::from_str(json_str).map_err(|error| format!("Extraction JSON: {}", error))?;
+    let object = parse_json_object(cleaned)?;
     let mut result = KnowledgeExtract::default();
 
     if let Some(entities) = object.get("entities").and_then(Value::as_array) {
@@ -703,6 +697,208 @@ fn parse_knowledge(
     }
 
     Ok(result)
+}
+
+/// Find and parse one complete extraction object. Some models append a second
+/// JSON object or commentary after a valid response; using `rfind('}')` would
+/// combine those objects and report a misleading "trailing characters" error.
+fn parse_json_object(response: &str) -> Result<Value, String> {
+    let mut first_error = None;
+    let starts: Vec<usize> = response
+        .char_indices()
+        .filter_map(|(index, character)| (character == '{').then_some(index))
+        .collect();
+    for start in starts {
+        let Some(end) = balanced_json_object_end(response, start) else {
+            continue;
+        };
+        let candidate = &response[start..=end];
+        match serde_json::from_str::<Value>(candidate) {
+            Ok(value) if value.is_object() => return Ok(value),
+            Ok(_) => continue,
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+
+        // Models commonly produce an almost-valid object: repair only this
+        // balanced candidate, never the unrelated text or following object.
+        let repaired = repair_json_syntax(candidate);
+        if let Ok(value) = serde_json::from_str::<Value>(&repaired) {
+            if value.is_object() {
+                return Ok(value);
+            }
+        }
+    }
+
+    match first_error {
+        Some(error) => Err(format!("Extraction JSON: {}", error)),
+        None => Err("Extraction response did not contain a JSON object".to_string()),
+    }
+}
+
+fn balanced_json_object_end(input: &str, start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, character) in input[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => in_string = true,
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(start + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Repair syntax-only JSON mistakes commonly produced by long extraction
+/// responses. This intentionally does not invent fields or values: semantic
+/// validation remains the responsibility of `parse_knowledge`.
+fn repair_json_syntax(input: &str) -> String {
+    let quoted_keys = quote_unquoted_keys(input);
+    let chars: Vec<char> = quoted_keys.chars().collect();
+    let mut output = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, character) in chars.iter().copied().enumerate() {
+        if in_string {
+            if escaped {
+                output.push(character);
+                escaped = false;
+                continue;
+            }
+            if character == '\\' {
+                output.push(character);
+                escaped = true;
+                continue;
+            }
+            if character == '"' {
+                let next = next_non_whitespace(&chars, index + 1);
+                // A quote followed by another quote and then a delimiter is
+                // the inner quote of a value such as `name "NIOA"`.
+                let next_after_quote = if next == Some('"') {
+                    next_non_whitespace(&chars, index + 2)
+                } else {
+                    None
+                };
+                let previous = index
+                    .checked_sub(1)
+                    .and_then(|position| chars.get(position).copied());
+                let closes = matches!(next, None | Some(',' | ']' | '}' | ':'))
+                    || (previous == Some('"')
+                        && next == Some('"')
+                        && matches!(next_after_quote, None | Some(',' | ']' | '}' | ':')));
+                if closes {
+                    output.push(character);
+                    in_string = false;
+                } else {
+                    output.push_str("\\\"");
+                }
+                continue;
+            }
+            if character == '\n' {
+                output.push_str("\\n");
+            } else if character == '\r' {
+                output.push_str("\\r");
+            } else if character == '\t' {
+                output.push_str("\\t");
+            } else if character.is_control() {
+                output.push_str(&format!("\\u{:04x}", character as u32));
+            } else {
+                output.push(character);
+            }
+            continue;
+        }
+
+        if character == '"' {
+            in_string = true;
+            output.push(character);
+        } else if character == ','
+            && matches!(next_non_whitespace(&chars, index + 1), Some(']' | '}'))
+        {
+            // Drop trailing commas in arrays and objects.
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+/// Quote bare object keys such as `{entities: [...]}` while leaving string
+/// values and already-quoted keys untouched.
+fn quote_unquoted_keys(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let mut output = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut index = 0;
+
+    while index < chars.len() {
+        let character = chars[index];
+        if in_string {
+            output.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            index += 1;
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            output.push(character);
+            index += 1;
+            continue;
+        }
+        if character.is_ascii_alphabetic() || character == '_' {
+            let start = index;
+            index += 1;
+            while index < chars.len()
+                && (chars[index].is_ascii_alphanumeric() || matches!(chars[index], '_' | '-'))
+            {
+                index += 1;
+            }
+            let next = next_non_whitespace(&chars, index);
+            if next == Some(':') {
+                output.push('"');
+                output.extend(chars[start..index].iter());
+                output.push('"');
+            } else {
+                output.extend(chars[start..index].iter());
+            }
+            continue;
+        }
+        output.push(character);
+        index += 1;
+    }
+    output
+}
+
+fn next_non_whitespace(chars: &[char], start: usize) -> Option<char> {
+    chars[start..]
+        .iter()
+        .copied()
+        .find(|character| !character.is_whitespace())
 }
 
 fn normalize_entity(value: &str, document_name: Option<&str>) -> Option<String> {
@@ -876,6 +1072,42 @@ mod tests {
         assert_eq!(parsed.entities.len(), 2);
         assert_eq!(parsed.relations[0].from, "distributed.md");
         assert_eq!(parsed.relations[0].to, "Consensus");
+    }
+
+    #[test]
+    fn repairs_common_model_json_syntax_errors() {
+        let response = r#"{
+          "entities": [{"name":"NIOA "algorithm" process","type":"Concept"},],
+          "facts": [],
+          "relations": [{"from":"NIOA "algorithm" process","relation":"USES","to":"Surrogate models","confidence":0.9,},]
+        }"#;
+        let parsed = parse_knowledge(response, Some("nioa.md")).unwrap();
+        assert_eq!(parsed.entities.len(), 2);
+        assert_eq!(parsed.relations.len(), 1);
+        assert_eq!(parsed.relations[0].from, "NIOA \"algorithm\" process");
+    }
+
+    #[test]
+    fn repairs_unquoted_object_keys() {
+        let response = r#"{
+          entities: [{"name":"Transfer learning","type":"Concept"}],
+          facts: [],
+          relations: [{from:"Transfer learning", relation:"USES", to:"Surrogate models", confidence:0.9}]
+        }"#;
+        let parsed = parse_knowledge(response, Some("transfer-learning.md")).unwrap();
+        assert_eq!(parsed.entities.len(), 2);
+        assert_eq!(parsed.relations.len(), 1);
+        assert_eq!(parsed.relations[0].relation, "USES");
+    }
+
+    #[test]
+    fn parses_first_object_when_model_appends_another_object() {
+        let response = r#"Here is the extraction:
+        {"entities":[{"name":"GAN","type":"Concept"}],"facts":[],"relations":[]}
+        {"note":"extra commentary object"}"#;
+        let parsed = parse_knowledge(response, Some("gan.md")).unwrap();
+        assert_eq!(parsed.entities.len(), 1);
+        assert_eq!(parsed.entities[0].name, "GAN");
     }
 
     #[test]

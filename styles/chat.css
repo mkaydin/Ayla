@@ -150,6 +150,38 @@
   color: var(--text-primary);
 }
 
+/* Reasoning is intentionally separate from the answer: it is visible for
+   transparency, but never passed to Markdown rendering or TTS. */
+.chat-thinking {
+  margin: 0 0 8px;
+  padding: 6px 9px;
+  border-left: 2px solid rgba(148, 163, 184, 0.35);
+  color: var(--text-muted);
+  opacity: 0.58;
+  font-size: 0.86em;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.chat-thinking[hidden] { display: none; }
+
+.chat-thinking-label {
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+  font-size: 0.8em;
+  font-style: normal;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.chat-thinking-body {
+  max-height: 150px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.chat-response { min-width: 0; }
+
 .msg.system {
   align-self: center;
   max-width: 90%;
