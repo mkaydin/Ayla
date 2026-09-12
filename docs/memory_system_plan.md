@@ -1,3 +1,5 @@
+> Historical design record. Runtime and setup instructions are superseded by [README](../README.md) and the [production readiness plan](PRODUCTION_READINESS_PLAN.md).
+
 # AI Assistant Memory Architecture
 
 ### Production-Ready Local Memory System

@@ -5,8 +5,7 @@ use reqwest::Client;
 use serde_json::json;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{debug, warn};
-use url::Url;
+use tracing::debug;
 
 const LIGHTPANDA_WS: &str = "ws://localhost:9222";
 
@@ -14,7 +13,6 @@ const LIGHTPANDA_WS: &str = "ws://localhost:9222";
 pub struct Renderer {
     http_client: Client,
     ws_url: String,
-    timeout_secs: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +46,6 @@ impl Renderer {
         Ok(Self {
             http_client,
             ws_url: LIGHTPANDA_WS.to_string(),
-            timeout_secs: 30,
         })
     }
 
@@ -75,144 +72,98 @@ impl Renderer {
     }
 
     pub async fn fetch_rendered(&self, url: &str) -> Result<RenderResult> {
-        let parsed = Url::parse(url).context("Invalid URL for rendering")?;
-
-        debug!("Connecting to Lightpanda CDP at {}", self.ws_url);
-        let connect_result = connect_async(&self.ws_url).await;
-
-        match connect_result {
-            Ok((ws_stream, _)) => {
-                let (mut write, mut read) = ws_stream.split();
-
-                let navigate = json!({
-                    "id": 1,
-                    "method": "Page.navigate",
-                    "params": { "url": parsed.as_str() }
-                });
-                if let Err(e) = write.send(Message::Text(navigate.to_string())).await {
-                    warn!("Lightpanda navigate failed: {}, using HTTP fallback", e);
-                    return self.fetch_plain(url).await;
-                }
-
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-                let evaluate_script = r#"
-                    (() => {
-                        function getText(sel) {
-                            const el = document.querySelector(sel);
-                            return el ? el.innerText.trim() : '';
-                        }
-                        const title = document.title || '';
-                        let text = getText('article') ||
-                                   getText('[role="main"]') ||
-                                   getText('main') ||
-                                   getText('.main-content') ||
-                                   getText('#main-content') ||
-                                   getText('.paper-detail') ||
-                                   getText('.article-body') ||
-                                   getText('.content') ||
-                                   getText('#content');
-                        if (!text && document.body) text = document.body.innerText;
-                        const metaDesc = getText('meta[name="description"]');
-                        if (metaDesc) text = metaDesc + '\n\n' + text;
-                        return JSON.stringify({ title, text: text.substring(0, 60000) });
-                    })()
-                "#;
-
-                let evaluate = json!({
-                    "id": 2,
-                    "method": "Runtime.evaluate",
-                    "params": {
-                        "expression": evaluate_script,
-                        "returnByValue": true,
-                        "awaitPromise": true
-                    }
-                });
-                if let Err(e) = write.send(Message::Text(evaluate.to_string())).await {
-                    warn!("Lightpanda evaluate failed: {}, using HTTP fallback", e);
-                    return self.fetch_plain(url).await;
-                }
-
-                let mut html_content = String::new();
-                let mut page_title = String::new();
-                let load_timeout =
-                    tokio::time::sleep(std::time::Duration::from_secs(self.timeout_secs));
-                tokio::pin!(load_timeout);
-
-                loop {
-                    tokio::select! {
-                        msg = read.next() => {
-                            match msg {
-                                Some(Ok(Message::Text(text))) => {
-                                    if let Ok(resp) = serde_json::from_str::<serde_json::Value>(&text) {
-                                        if let Some(error) = resp.get("error") {
-                                            debug!("Lightpanda CDP notice: {}", error);
-                                            continue;
-                                        }
-                                        if let Some(value) = resp.get("result")
-                                            .and_then(|r| r.get("result"))
-                                            .and_then(|r| r.get("value"))
-                                            .and_then(|v| v.as_str())
-                                        {
-                                            if let Ok(extracted) = serde_json::from_str::<serde_json::Value>(value) {
-                                                page_title = extracted["title"].as_str().unwrap_or("").to_string();
-                                                html_content = extracted["text"].as_str().unwrap_or("").to_string();
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                Some(Ok(Message::Close(_))) => break,
-                                Some(Err(_)) => break,
-                                None => break,
-                                _ => {}
-                            }
-                        }
-                        _ = &mut load_timeout => {
-                            warn!("Lightpanda render timeout for {}", url);
-                            break;
-                        }
-                    }
-                }
-
-                let _ = write.send(Message::Close(None)).await;
-
-                if html_content.is_empty() {
-                    return self.fetch_plain(url).await;
-                }
-
-                Ok(RenderResult {
-                    page: RenderedPage {
-                        url: url.to_string(),
-                        title: page_title,
-                        text_content: html_content,
-                        status_code: 200,
-                    },
-                    html: String::new(),
-                })
-            }
-            Err(e) => {
-                debug!("Lightpanda unavailable ({}), using HTTP fallback", e);
-                self.fetch_plain(url).await
+        // The HTTP gateway validates redirects and pins DNS. Never let CDP
+        // navigate arbitrary source URLs or execute their scripts on the host.
+        let plain = self.fetch_plain(url).await?;
+        if !plain.html.to_ascii_lowercase().contains("<html") {
+            return Ok(plain);
+        }
+        match self.render_guarded_html(&plain.html).await {
+            Ok((title, text)) if !text.trim().is_empty() => Ok(RenderResult {
+                page: RenderedPage {
+                    url: url.to_string(),
+                    title,
+                    text_content: text,
+                    status_code: plain.page.status_code,
+                },
+                html: plain.html,
+            }),
+            Ok(_) => Ok(plain),
+            Err(error) => {
+                debug!("Guarded CDP unavailable ({error}); using bounded HTTP extraction");
+                Ok(plain)
             }
         }
     }
 
+    async fn render_guarded_html(&self, html: &str) -> Result<(String, String)> {
+        let (mut socket, _) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            connect_async(&self.ws_url),
+        )
+        .await??;
+        let mut sequence = 0u64;
+        // Independent browser contexts prevent concurrent jobs from replacing each other's pages.
+        let result = cdp_call(
+            &mut socket,
+            &mut sequence,
+            None,
+            "Browser.createBrowserContext",
+            json!({"disposeOnDetach": true}),
+        )
+        .await?;
+        let context = result["browserContextId"]
+            .as_str()
+            .context("CDP has no isolated browser contexts")?
+            .to_string();
+        let rendering = async {
+            let target = cdp_call(&mut socket, &mut sequence, None, "Target.createTarget", json!({"url": "about:blank", "browserContextId": context})).await?;
+            let target = target["targetId"].as_str().context("CDP has no target")?;
+            let attached = cdp_call(&mut socket, &mut sequence, None, "Target.attachToTarget", json!({"targetId": target, "flatten": true})).await?;
+            let session = attached["sessionId"].as_str().context("CDP has no session")?;
+            cdp_call(&mut socket, &mut sequence, Some(session), "Network.enable", json!({})).await?;
+            cdp_call(&mut socket, &mut sequence, Some(session), "Network.setBlockedURLs", json!({"urls": ["*"]})).await?;
+            cdp_call(&mut socket, &mut sequence, Some(session), "Emulation.setScriptExecutionDisabled", json!({"value": true})).await?;
+            let frame = cdp_call(&mut socket, &mut sequence, Some(session), "Page.getFrameTree", json!({})).await?;
+            let frame = frame["frameTree"]["frame"]["id"].as_str().context("CDP has no frame")?;
+            cdp_call(&mut socket, &mut sequence, Some(session), "Page.setDocumentContent", json!({"frameId": frame, "html": html})).await?;
+            let extracted = cdp_call(&mut socket, &mut sequence, Some(session), "Runtime.evaluate", json!({
+                "expression": "JSON.stringify({title: document.title, text: (document.querySelector('article, main, [role=main]') || document.body).innerText.substring(0, 60000)})",
+                "returnByValue": true,
+            })).await?;
+            let value: serde_json::Value = serde_json::from_str(extracted["result"]["value"].as_str().context("CDP has no extracted value")?)?;
+            Ok((value["title"].as_str().unwrap_or_default().to_string(), value["text"].as_str().unwrap_or_default().to_string()))
+        }.await;
+        // Disposal is awaited on success/failure. Connection closure also releases ownership
+        // on cancellation; disposeOnDetach asks the server to enforce that lifetime.
+        let _ = cdp_call(
+            &mut socket,
+            &mut sequence,
+            None,
+            "Browser.disposeBrowserContext",
+            json!({"browserContextId": context}),
+        )
+        .await;
+        let _ = socket.close(None).await;
+        rendering
+    }
+
     async fn fetch_plain(&self, url: &str) -> Result<RenderResult> {
         debug!("HTTP fetch: {}", url);
-        let response = self
-            .http_client
-            .get(url)
-            .send()
-            .await
-            .context("HTTP fetch failed")?;
-
+        let response =
+            crate::public_fetch::get_public(url, std::time::Duration::from_secs(30)).await?;
         let status = response.status().as_u16();
-        let html = response
-            .text()
-            .await
-            .context("Failed to read response body")?;
-
+        response.error_for_status_ref()?;
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            if bytes.len().saturating_add(chunk.len()) > 768 * 1024 {
+                anyhow::bail!("Research page exceeds the content limit");
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let html = String::from_utf8_lossy(&bytes).into_owned();
         let title = extract_title_plain(&html);
         let text = extract_content_structured(&html);
 
@@ -247,6 +198,42 @@ impl Renderer {
             .next()
             .unwrap_or("9222")
     }
+}
+
+async fn cdp_call(
+    socket: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    sequence: &mut u64,
+    session: Option<&str>,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value> {
+    *sequence += 1;
+    let id = *sequence;
+    let mut command = json!({"id": id, "method": method, "params": params});
+    if let Some(session) = session {
+        command["sessionId"] = json!(session);
+    }
+    socket.send(Message::Text(command.to_string())).await?;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(message) = socket.next().await {
+            if let Message::Text(text) = message? {
+                if text.len() > 2 * 1024 * 1024 {
+                    anyhow::bail!("CDP response exceeds the limit");
+                }
+                let response: serde_json::Value = serde_json::from_str(&text)?;
+                if response["id"].as_u64() == Some(id) {
+                    if let Some(error) = response.get("error") {
+                        anyhow::bail!("CDP {method}: {error}");
+                    }
+                    return Ok(response["result"].clone());
+                }
+            }
+        }
+        anyhow::bail!("CDP closed before replying")
+    })
+    .await?
 }
 
 fn extract_title_plain(html: &str) -> String {
@@ -390,7 +377,7 @@ fn strip_html_tags_keep_structure(html: &str) -> String {
             }
         } else if in_script {
             if chars[i] == '<' && i + 8 < chars.len() {
-                let remaining: String = chars[i..].iter().collect();
+                let remaining: String = chars[i..].iter().take(10).collect();
                 if remaining.to_lowercase().starts_with("</script>") {
                     in_script = false;
                     in_tag = true;
@@ -398,7 +385,7 @@ fn strip_html_tags_keep_structure(html: &str) -> String {
             }
         } else if in_style {
             if chars[i] == '<' && i + 7 < chars.len() {
-                let remaining: String = chars[i..].iter().collect();
+                let remaining: String = chars[i..].iter().take(10).collect();
                 if remaining.to_lowercase().starts_with("</style>") {
                     in_style = false;
                     in_tag = true;
@@ -423,4 +410,16 @@ fn unescape_html(s: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&#x27;", "'")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn source_scripts_are_removed_with_bounded_scanning() {
+        let html = format!("<html><title>Fixture</title><script>{}</script><p>Public evidence survives the page extraction filter.</p></html>", "<x".repeat(100_000));
+        let text = extract_content_structured(&html);
+        assert!(text.contains("Public evidence"));
+        assert!(!text.contains("<x"));
+    }
 }

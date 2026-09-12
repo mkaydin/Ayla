@@ -5,7 +5,9 @@ import {
   hasDesktopBackend,
   invoke,
   invokeStreamCancelable,
+  listenEvent,
 } from '../lib/ipc.js';
+import { SttCapture } from '../stt-capture.js';
 import { MarkdownSpeechStream, renderMarkdown } from '../lib/markdown.js';
 import { events } from '../lib/events.js';
 import { CORE_IDENTITY, EXPR_TAGS, EXPR_MAP } from '../lib/prompts.js';
@@ -37,7 +39,9 @@ export function initChatPanel(applyExpressionFn) {
       </div>
       <div class="chat-messages-area">
         <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-stt-preview" id="chat-stt-preview" hidden></div>
         <div class="chat-input-row">
+          <button class="chat-mic-btn" id="chat-mic-btn" title="Dictate into the composer" aria-label="Start dictation">🎙</button>
           <textarea class="chat-input" id="chat-input" placeholder="Ask Ayla..." rows="1"></textarea>
           <button class="chat-send-btn" id="chat-send-btn">\u2191</button>
         </div>
@@ -65,10 +69,78 @@ export function initChatPanel(applyExpressionFn) {
   const msgContainer = document.getElementById('chat-messages');
   const inputEl = document.getElementById('chat-input');
   const sendBtn = document.getElementById('chat-send-btn');
+  const micBtn = document.getElementById('chat-mic-btn');
+  const sttPreview = document.getElementById('chat-stt-preview');
   const sessionList = document.getElementById('chat-session-list');
   const newBtn = document.getElementById('chat-new-btn');
   const deleteBtn = document.getElementById('chat-delete-btn');
   const kbBtn = document.getElementById('chat-to-kb-btn');
+  let activeSttSession = null;
+
+  const setDictationState = value => {
+    const recording = value === 'recording' || value === 'listening';
+    const busy = value === 'starting' || value === 'stopping' || value === 'processing';
+    micBtn.classList.toggle('active', recording);
+    micBtn.disabled = busy;
+    micBtn.textContent = recording ? '■' : busy ? '…' : '🎙';
+    micBtn.title = recording
+      ? 'Stop recording and transcribe'
+      : busy ? 'Processing recorded speech' : 'Record a voice command';
+    micBtn.setAttribute('aria-label', micBtn.title);
+    if (value === 'recording') {
+      sttPreview.textContent = 'Recording… Press the microphone again to stop and transcribe.';
+      sttPreview.hidden = false;
+    } else if (value === 'processing') {
+      sttPreview.textContent = 'Processing recorded speech…';
+      sttPreview.hidden = false;
+    } else if (value === 'idle') {
+      micBtn.style.setProperty('--mic-level', '0');
+      if (sttPreview.textContent === 'Processing recorded speech…') {
+        sttPreview.textContent = 'No speech was recognized.';
+      }
+    }
+  };
+  const sttCapture = new SttCapture({
+    deferred: true,
+    onState: setDictationState,
+    onSession: sessionId => { activeSttSession = sessionId; },
+    onLevel: ({ rms }) => {
+      micBtn.style.setProperty('--mic-level', String(Math.min(1, rms * 5)));
+    },
+    onError: error => events.emit('status-log', {
+      type: 'error',
+      message: `STT: ${error?.message || error}`,
+    }),
+  });
+
+  const sttListeners = [
+    listenEvent('stt-partial', event => {
+      if (event.payload?.sessionId !== activeSttSession) return;
+      sttPreview.textContent = event.payload.text
+        ? `Processing: ${event.payload.text}`
+        : 'Processing recorded speech…';
+      sttPreview.hidden = !sttPreview.textContent;
+    }),
+    listenEvent('stt-final', event => {
+      if (event.payload?.sessionId !== activeSttSession) return;
+      const text = String(event.payload.text || '').trim();
+      if (text) {
+        inputEl.value = `${inputEl.value.trim()} ${text}`.trim();
+        inputEl.dispatchEvent(new Event('input'));
+        inputEl.focus();
+      }
+      sttPreview.textContent = text ? `Recognized: ${text}` : 'No speech was recognized.';
+      sttPreview.hidden = false;
+    }),
+    listenEvent('stt-level', event => {
+      if (event.payload?.sessionId !== activeSttSession) return;
+      const level = Math.min(1, Number(event.payload.rms || 0) * 5);
+      micBtn.style.setProperty('--mic-level', String(level));
+    }),
+  ];
+  void Promise.all(sttListeners).catch(error => {
+    events.emit('status-log', { type: 'error', message: `STT events: ${error.message}` });
+  });
 
   function renderSessions() {
     const fragment = document.createDocumentFragment();
@@ -444,6 +516,26 @@ export function initChatPanel(applyExpressionFn) {
     }
     sendMessage();
   });
+  micBtn.addEventListener('click', async () => {
+    if (sttCapture.active) {
+      await sttCapture.stop().catch(() => {});
+      return;
+    }
+    if (!hasDesktopBackend()) {
+      events.emit('status-log', { type: 'error', message: 'STT requires the desktop backend.' });
+      return;
+    }
+    activeSttSession = null;
+    events.emit('stt-starting');
+    try {
+      await sttCapture.start();
+      events.emit('status-log', {
+        type: 'success',
+        message: 'Voice recording started · press the microphone again to transcribe',
+      });
+    } catch {}
+  });
+  window.addEventListener('beforeunload', () => { void sttCapture.stop(); }, { once: true });
   newBtn.addEventListener('click', newSession);
   deleteBtn.addEventListener('click', deleteSession);
   kbBtn.addEventListener('click', sendToKb);

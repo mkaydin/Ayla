@@ -144,3 +144,27 @@ fn calculate_file_sha(path: &Path) -> Result<String> {
     hasher.update(&bytes);
     Ok(format!("{:x}", hasher.finalize()))
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn deeply_nested_pdf_objects_are_rejected_without_process_abort() {
+        fn fixture(depth: usize) -> Vec<u8> {
+            let mut pdf = "%PDF-1.4\n".to_string();
+            let first = pdf.len();
+            pdf.push_str(&format!(
+                "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /X {}0{} >>\nendobj\n",
+                "[".repeat(depth),
+                "]".repeat(depth)
+            ));
+            let second = pdf.len();
+            pdf.push_str("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+            let xref = pdf.len();
+            pdf.push_str(&format!("xref\n0 3\n0000000000 65535 f \n{first:010} 00000 n \n{second:010} 00000 n \ntrailer\n<< /Root 1 0 R /Size 3 >>\nstartxref\n{xref}\n%%EOF\n"));
+            pdf.into_bytes()
+        }
+        assert!(lopdf::Document::load_mem(&fixture(8)).is_ok());
+        let document = lopdf::Document::load_mem(&fixture(10_380));
+        assert!(document.is_err() || document.unwrap().get_object((1, 0)).is_err());
+    }
+}

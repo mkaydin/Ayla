@@ -37,7 +37,6 @@ test('first-party runtime sources contain only the Ayla identity', () => {
   const files = [
     ...sourceFiles(path.join(root, 'src')),
     ...sourceFiles(path.join(root, 'electron')),
-    ...sourceFiles(path.join(root, 'src-tauri', 'src')),
     ...sourceFiles(path.join(root, 'crates')),
   ];
   const legacyName = new RegExp(['a', 'lice'].join(''), 'i');

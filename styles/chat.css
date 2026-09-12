@@ -315,6 +315,37 @@
   color: var(--text-muted);
 }
 
+.chat-stt-preview {
+  margin: 0 var(--space-md);
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-style: italic;
+  border-left: 2px solid rgba(59,130,246,0.55);
+}
+
+.chat-mic-btn {
+  --mic-level: 0;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(59,130,246,0.3);
+  color: var(--text-primary);
+  background: rgba(59,130,246,calc(0.15 + var(--mic-level) * 0.5));
+  cursor: pointer;
+}
+
+.chat-mic-btn.active {
+  border-color: rgba(248,113,113,0.8);
+  background: rgba(239,68,68,calc(0.28 + var(--mic-level) * 0.55));
+}
+
+.chat-mic-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .chat-send-btn {
   background: rgba(59,130,246,0.35);
   border: 1px solid rgba(59,130,246,0.25);

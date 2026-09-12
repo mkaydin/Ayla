@@ -16,13 +16,27 @@ const projectDirectory = dirname(electronDirectory);
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_OUTSTANDING_REQUESTS = 64;
 const LONG_COMMANDS = new Set([
+  'commit_document',
   'analyze_and_merge_kb',
   'generate_tts',
+  'start_stt',
+  'stt_push_audio',
+  'stop_stt',
   'ingest_text',
   'process_message',
   'process_turn',
   'run_consolidation',
   'run_ocr',
+  'ingest_ocr_knowledge',
+  'approve_ocr_graph',
+  'remove_ocr_graph',
+  'rollback_graph_v2',
+  'migrate_legacy_graph_v2',
+  'prune_graph_v2_backups',
+  'run_code_analysis',
+  'approve_code_analysis',
+  'remove_code_analysis',
+  'delete_code_analysis_run',
   'run_search',
   'stream_chat',
 ]);

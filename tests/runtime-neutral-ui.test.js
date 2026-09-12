@@ -10,6 +10,7 @@ const frontendModules = [
   'src/ui/chat-panel.js',
   'src/ui/kb-panel.js',
   'src/ui/ocr-panel.js',
+  'src/ui/code-analysis-panel.js',
   'src/ui/search-panel.js',
   'src/ui/status-panel.js',
 ];
@@ -31,8 +32,8 @@ test('feature UI modules depend only on the runtime-neutral desktop adapter', ()
   }
 });
 
-test('OCR and research panels contain no simulated success path', () => {
-  for (const relativePath of ['src/ui/ocr-panel.js', 'src/ui/search-panel.js']) {
+test('OCR, research, and code panels contain no simulated success path', () => {
+  for (const relativePath of ['src/ui/ocr-panel.js', 'src/ui/search-panel.js', 'src/ui/code-analysis-panel.js']) {
     const source = readFileSync(path.join(root, relativePath), 'utf8');
     assert.doesNotMatch(source, /\bsimulat(?:e|ed|ing|ion)\b/i);
     assert.doesNotMatch(source, /browser preview/i);

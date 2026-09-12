@@ -1,3 +1,4 @@
+import { diagnosticEnvironment, backendCommandCatalog } from './diagnostic-environment.mjs';
 import path from 'node:path';
 import process from 'node:process';
 import {
@@ -8,12 +9,12 @@ import {
 
 const root = path.resolve(import.meta.dirname, '..');
 const manager = new SidecarManager({
-  binaryPath: developmentSidecarPath(root),
+  binaryPath: process.env.AYLA_SIDECAR_BIN || developmentSidecarPath(root),
   args: ['--offline'],
   cwd: root,
   env: {
-    ...process.env,
-    AYLA_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
+    ...diagnosticEnvironment(),
+    AYLA_DEVELOPMENT_ROOT: root,
   },
   startupTimeout: 5_000,
 });
@@ -32,8 +33,11 @@ async function expectError(method, params, expectedCode) {
 
 try {
   const hello = await manager.start();
-  if (manager.methods.size !== 29) {
-    throw new Error(`Expected 29 advertised methods, got ${manager.methods.size}`);
+  const expected = backendCommandCatalog(root);
+  const missing = expected.filter(method => !manager.methods.has(method));
+  const unexpected = [...manager.methods].filter(method => !expected.includes(method));
+  if (missing.length || unexpected.length) {
+    throw new Error(`Backend catalog mismatch: missing=${missing}, unexpected=${unexpected}`);
   }
   await manager.ping();
 
@@ -48,6 +52,14 @@ try {
       `get_kb_data did not return a graph payload: ${JSON.stringify(initialGraph)}`,
     );
   }
+  const initialGraphV2 = await manager.request('get_graph_v2_data');
+  if (initialGraphV2?.available !== false
+      || !Array.isArray(initialGraphV2?.nodes)
+      || !Array.isArray(initialGraphV2?.runs)) {
+    throw new Error(
+      `get_graph_v2_data did not preserve its offline contract: ${JSON.stringify(initialGraphV2)}`,
+    );
+  }
 
   const extracted = await manager.request('run_quick_extract', {
     filePath: path.join(root, 'package.json'),
@@ -56,19 +68,11 @@ try {
     throw new Error(`Quick Extract returned an invalid payload: ${JSON.stringify(extracted)}`);
   }
 
-  const ingestResult = await manager.request('ingest_text', {
-    text: 'Ayla sidecar diagnostic document.',
-    source: 'sidecar-diagnostic.md',
-    sourceType: 'diagnostic',
-  });
-  if (typeof ingestResult !== 'string') {
-    throw new Error(`ingest_text returned an invalid payload: ${JSON.stringify(ingestResult)}`);
-  }
-
+  await expectError('ingest_text', {
+    text: 'Ayla sidecar diagnostic document.', source: 'sidecar-diagnostic.md', sourceType: 'diagnostic',
+  }, 'db_offline');
   const graph = await manager.request('get_kb_data');
-  if (!graph.nodes.some(node => node.name === 'sidecar-diagnostic.md')) {
-    throw new Error('Offline ingest did not update the shared in-process graph');
-  }
+  if (graph.nodes.length !== initialGraph.nodes.length) throw new Error('Offline approval changed knowledge');
 
   const cancelled = await manager.request('cancel_process', { pid: 'missing-process' });
   if (cancelled !== false) {
@@ -76,7 +80,16 @@ try {
   }
 
   await manager.request('stop_tts');
-  await expectError('generate_tts', { text: 'hello' }, 'tts_generation');
+  let ttsContract = 'available';
+  try {
+    const wav = await manager.request('generate_tts', { text: 'hello' });
+    if (!(wav instanceof Uint8Array) || wav.length < 44 || String.fromCharCode(...wav.slice(0, 4)) !== 'RIFF') {
+      throw new Error('generate_tts did not return a valid binary WAV');
+    }
+  } catch (error) {
+    if (!(error instanceof SidecarRequestError) || error.code !== 'tts_generation') throw error;
+    ttsContract = 'unavailable-explicitly';
+  }
   await expectError(
     'save_chat_session',
     { sessionId: 'diagnostic', title: 'Diagnostic', messagesJson: '[]' },
@@ -100,11 +113,12 @@ try {
     ping: 'ok',
     offlineDbReady: ready,
     quickExtractChars: extracted.chars,
-    offlineIngest: 'ok',
+    offlineIngest: 'rejected-explicitly',
     graphNodes: graph.nodes.length,
     graphEdges: graph.edges.length,
+    offlineGraphV2: 'unavailable-explicitly',
     cancellation: 'ok',
-    ttsErrorContract: 'ok',
+    ttsContract,
     mutationErrorContract: 'ok',
     allowlist,
     cleanShutdown: manager.snapshot().state === 'stopped',

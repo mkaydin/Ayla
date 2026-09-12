@@ -31,7 +31,15 @@ impl IngestTool for OcrTool {
             ayla_ocr::OcrOptions {
                 model: config.ocr_model,
                 ollama_url: config.ollama_url,
+                parallel_pages: config.ocr_parallel,
+                num_ctx: config.ocr_num_ctx as u32,
                 request_timeout_secs: config.ollama_long_timeout_secs as u64,
+                resume_cache: config.ocr_resume_cache,
+                cache_dir: Some(config.ocr_cache_dir),
+                knowledge_mode: ayla_ocr::OcrKnowledgeMode::parse(&config.ocr_knowledge_mode)
+                    .unwrap_or_default(),
+                assembly_model: Some(config.ocr_assembly_model),
+                assembly_allow_cloud: config.ocr_assembly_allow_cloud,
                 ..Default::default()
             },
             None,
@@ -58,6 +66,9 @@ impl IngestTool for OcrTool {
                     "file": input,
                     "pages_processed": result.pages_processed,
                     "pages_skipped": result.pages_skipped,
+                    "page_results": result.page_results,
+                    "models": result.models,
+                    "warnings": result.warnings,
                 }),
             },
             timestamp: chrono::Utc::now(),

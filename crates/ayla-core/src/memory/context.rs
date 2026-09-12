@@ -13,6 +13,7 @@ impl ContextBuilder {
         if !context.related_facts.is_empty()
             || !context.related_episodes.is_empty()
             || !context.related_entities.is_empty()
+            || !context.related_documents.is_empty()
         {
             prompt.push_str("## Current Context\n\n");
             prompt.push_str("The following information is relevant to the user's query. Use it where applicable. Do not repeat it verbatim unless asked.\n\n");
@@ -48,7 +49,7 @@ impl ContextBuilder {
                 prompt.push_str(&format!(
                     "[Doc chunk {}]: {}\n",
                     i + 1,
-                    safe_truncate(doc, 300)
+                    safe_truncate(doc, 2000)
                 ));
             }
             prompt.push('\n');

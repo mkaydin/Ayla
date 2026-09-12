@@ -41,6 +41,13 @@ test('Electron file dialog policy sanitizes extensions and bounds filters', () =
   }]);
 });
 
+test('Electron directory picker cannot be widened into a mixed file dialog', () => {
+  assert.deepEqual(
+    normalizeDialogOptions({ directory: true, multiple: true, filters: [{ name: 'All', extensions: ['*'] }] }),
+    { properties: ['openDirectory'], filters: [] },
+  );
+});
+
 test('Electron request identifiers accept UUIDs and reject channel injection', () => {
   assert.equal(
     validateRequestId('11111111-1111-4111-8111-111111111111'),

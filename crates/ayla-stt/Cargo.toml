@@ -1,0 +1,12 @@
+[package]
+name = "ayla-stt"
+version = "0.1.0"
+description = "Host-neutral offline speech recognition and VAD for Ayla"
+edition = "2021"
+rust-version = "1.88.0"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+sherpa-onnx = { path = "../../vendor/sherpa-onnx/sherpa-onnx" }
+uuid = { version = "1", features = ["v4"] }
+

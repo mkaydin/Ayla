@@ -1,0 +1,81 @@
+# Maintainer: Ayla contributors <noreply@localhost>
+pkgname=ayla-ai
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='AI coworker with speech, OCR, research and persistent knowledge'
+arch=('x86_64')
+url='https://github.com/mkaydin/Ayla'
+license=('MIT' 'Apache-2.0' 'GPL-3.0-or-later' 'LicenseRef-OpenRAIL-M')
+depends=('electron41>=41.10.7' 'bash' 'hicolor-icon-theme' 'gcc-libs' 'glibc' 'openssl' 'xz' 'bzip2')
+makedepends=('git' 'rust>=1.88' 'cargo' 'nodejs>=22.12' 'npm' 'pkgconf' 'binutils')
+optdepends=('ollama: chat, embeddings and GLM OCR' 'docker: optional storage and search services' 'docker-compose: local service stack')
+provides=('ayla')
+conflicts=('ayla-ai-bin')
+# Rust's linker cannot consume GCC LTO objects from Tree-sitter's C builds.
+options=('!lto' '!debug')
+source=("ayla::git+https://github.com/mkaydin/Ayla.git#tag=v${pkgver}"
+        'sherpa-onnx-v1.13.4-linux-x64-static-lib.tar.bz2::https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/sherpa-onnx-v1.13.4-linux-x64-static-lib.tar.bz2'
+        'pdfium-linux-x64-7881.tgz::https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7881/pdfium-linux-x64.tgz'
+        'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2'
+        'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2'
+        'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx')
+noextract=('sherpa-onnx-v1.13.4-linux-x64-static-lib.tar.bz2' 'pdfium-linux-x64-7881.tgz' 'sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2' 'sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2' 'silero_vad.onnx')
+sha256sums=('SKIP'
+            '98b0e31996426f6e78244dbce1955548f2c64e8f01c4be75b85af7cdaa2e8d5c'
+            '1470e21b8b4a3b4ad7f85684e2da11d94f3b69a86d81dee11b9b6709d927ac1d'
+            '82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427'
+            'cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed'
+            '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6')
+
+prepare() {
+  cd "$srcdir/ayla"
+  mkdir -p target/sherpa-onnx-prebuilt
+  cp "$srcdir/"{sherpa-onnx-v1.13.4-linux-x64-static-lib.tar.bz2,pdfium-linux-x64-7881.tgz} target/sherpa-onnx-prebuilt/
+  node scripts/bootstrap-native.mjs --offline
+  mkdir -p target/speech-model-archives
+  for archive in sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2 sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2 silero_vad.onnx; do
+    cp "$srcdir/$archive" target/speech-model-archives/
+  done
+  node scripts/bootstrap-speech.mjs --offline
+  # Dependency acquisition happens in prepare; build/check are offline.
+  ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --ignore-scripts
+  cargo fetch --locked --target x86_64-unknown-linux-gnu
+}
+
+build() {
+  cd "$srcdir/ayla"
+  npm run build
+  cargo build --release --locked --offline -p ayla-sidecar
+  node scripts/package-arch-source.mjs "$srcdir/payload"
+}
+
+check() {
+  cd "$srcdir/ayla"
+  npm run test
+  PDFIUM_LIB_PATH="$PWD/target/native/pdfium/lib/libpdfium.so" cargo test --workspace --locked --offline
+}
+
+package() {
+  install -dm755 "$pkgdir/usr/lib/ayla-ai"
+  cp -a --no-preserve=ownership "$srcdir/payload/." "$pkgdir/usr/lib/ayla-ai/"
+  install -dm755 "$pkgdir/usr/bin" "$pkgdir/usr/share/applications" "$pkgdir/usr/share/icons/hicolor/512x512/apps"
+  cat > "$pkgdir/usr/bin/ayla" <<'LAUNCHER'
+#!/bin/sh
+export AYLA_RESOURCE_DIR=/usr/lib/ayla-ai
+export AYLA_SIDECAR_BIN=/usr/lib/ayla-ai/bin/ayla-sidecar
+exec /usr/bin/electron41 /usr/lib/ayla-ai/app.asar "$@"
+LAUNCHER
+  chmod 755 "$pkgdir/usr/bin/ayla"
+  cat > "$pkgdir/usr/share/applications/ayla.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Ayla
+Exec=ayla
+Icon=ayla
+Terminal=false
+Categories=Utility;
+DESKTOP
+  install -m644 "$srcdir/payload/assets/icon.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/ayla.png"
+  install -Dm644 "$srcdir/ayla/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  cp -a --no-preserve=ownership "$srcdir/payload/licenses/." "$pkgdir/usr/share/licenses/$pkgname/"
+}

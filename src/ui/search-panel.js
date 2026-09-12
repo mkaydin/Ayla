@@ -97,6 +97,8 @@ function normalizeHistoryResult(value) {
     knowledgeDocument: value.knowledge_document || value.knowledgeDocument || '',
     knowledgeIngested: Boolean(value.knowledge_ingested || value.knowledgeIngested),
     persisted: value.persisted !== false,
+    status: value.status || 'complete',
+    warnings: Array.isArray(value.warnings) ? value.warnings : [],
   };
 }
 
@@ -298,6 +300,7 @@ export async function runSearch(query, mode = activeMode) {
       themes: searchResult.synthesis?.cross_cutting_themes?.length || 0,
       operationId: searchResult.id,
     });
+    if (searchResult.status === 'partial' || searchResult.warnings.length) events.emit('status-log', { type: 'info', message: `Partial research results: ${searchResult.warnings.join('; ')}` });
     renderReport(panel, searchResult);
   } catch (error) {
     const cancelled = cancelRequested || isCancellationError(error);
@@ -331,6 +334,7 @@ function renderReport(panel, result) {
   const processedCount = result.documents.filter(document => ['processed', 'ingested'].includes(document.status)).length;
 
   body.innerHTML = `
+    ${result.status === 'partial' || result.warnings?.length ? `<div class="search-state-pill">Partial results: ${escapeHtml((result.warnings || []).join('; '))}</div>` : ''}
     <div class="search-report-header">
       <button class="ocr-back-btn" id="search-back-btn">\u2190 Topic history</button>
       <div class="search-report-heading">
@@ -517,17 +521,12 @@ async function ingestKnowledgeDocument(panel, result) {
   notifyProcess('start', 'kb-ingest', announcementData);
   try {
     if (!hasDesktopBackend()) throw new Error('Knowledge ingestion requires the Rust desktop backend');
-    await invoke('save_file_record', {
+    await invoke('commit_document', {
       name: filename,
       path: `search://${result.searchId}/knowledge.md`,
       chars: text.length,
       sourceType: 'meta_search_knowledge',
       text,
-    });
-    await invoke('ingest_text', {
-      text,
-      source: filename,
-      sourceType: 'meta_search_knowledge',
     });
     result.knowledgeIngested = true;
     notifyProcess('complete', 'kb-ingest', announcementData);
@@ -606,10 +605,12 @@ async function processSearchDocument(panel, result, document, method, rerender =
       text,
       chars,
       chunks,
+      ocrOperationId: method === 'ocr' ? response.pid : null,
     });
 
     document.status = 'processed';
     document.extraction_method = method;
+    document.ocr_operation_id = method === 'ocr' ? response.pid : null;
     document.chars = chars;
     document.chunks = chunks;
     document.extractedText = text;
@@ -655,6 +656,7 @@ async function ingestSearchDocument(panel, result, document, rerender = true) {
         documentId: document.document_id,
       });
       text = stored.extracted_text || '';
+      document.ocr_operation_id = stored.ocr_operation_id;
     }
     if (!text) throw new Error('Process this document with Quick Extract or OCR first');
 
@@ -667,18 +669,18 @@ async function ingestSearchDocument(panel, result, document, rerender = true) {
       operationId: document.document_id,
     };
     notifyProcess('start', 'kb-ingest', announcementData);
-    await invoke('save_file_record', {
+    if (method === 'ocr') {
+      if (!document.ocr_operation_id) throw new Error('Reprocess this older OCR result to approve its structured evidence');
+      await invoke('ingest_ocr_knowledge', { operationId: document.ocr_operation_id });
+    } else {
+    await invoke('commit_document', {
       name: kbName,
       path: document.path,
       chars: text.length,
       sourceType: `search_${method}`,
       text,
     });
-    await invoke('ingest_text', {
-      text,
-      source: kbName,
-      sourceType: `search_${method}`,
-    });
+    }
     document.status = 'ingested';
     document.extractedText = text;
     notifyProcess('complete', 'kb-ingest', announcementData);

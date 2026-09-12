@@ -1,3 +1,4 @@
+import { diagnosticEnvironment, backendCommandCatalog } from './diagnostic-environment.mjs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
@@ -14,11 +15,11 @@ const messages = [
   { role: 'assistant', content: 'The diagnostic record will be deleted immediately.' },
 ];
 const manager = new SidecarManager({
-  binaryPath: developmentSidecarPath(root),
+  binaryPath: process.env.AYLA_SIDECAR_BIN || developmentSidecarPath(root),
   cwd: root,
   env: {
-    ...process.env,
-    AYLA_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
+    ...diagnosticEnvironment(),
+    AYLA_DEVELOPMENT_ROOT: root,
   },
   startupTimeout: 60_000,
   restartLimit: 0,

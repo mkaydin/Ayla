@@ -13,7 +13,7 @@ pub struct Searcher {
 impl Searcher {
     pub fn new() -> Result<Self> {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(65))
             .user_agent("Mozilla/5.0 (compatible; MetaSearchBot/0.2; +http://localhost)")
             .build()
             .context("Failed to build HTTP client")?;
@@ -26,7 +26,7 @@ impl Searcher {
 
     pub fn with_base_url(base_url: String) -> Result<Self> {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(65))
             .user_agent("Mozilla/5.0 (compatible; MetaSearchBot/0.2; +http://localhost)")
             .build()
             .context("Failed to build HTTP client")?;
@@ -35,9 +35,20 @@ impl Searcher {
     }
 
     pub async fn search(&self, query: &str, pages: u32) -> Result<Vec<SearchResult>> {
-        let mut all_results = Vec::new();
+        self.search_with_outcome(query, pages)
+            .await
+            .map(|(results, _)| results)
+    }
 
-        for page in 1..=pages {
+    pub async fn search_with_outcome(
+        &self,
+        query: &str,
+        pages: u32,
+    ) -> Result<(Vec<SearchResult>, Vec<String>)> {
+        let mut all_results = Vec::new();
+        let mut warnings = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for page in 1..=pages.clamp(1, 3) {
             let mut url = Url::parse(&format!("{}/search", self.base_url.trim_end_matches('/')))
                 .context("Invalid SearXNG URL")?;
             url.query_pairs_mut()
@@ -46,20 +57,35 @@ impl Searcher {
                 .append_pair("pageno", &page.to_string())
                 .append_pair("categories", "science");
 
-            let response = self
-                .client
-                .get(url)
-                .send()
-                .await
-                .context("Failed to reach SearXNG")?
-                .error_for_status()
-                .context("SearXNG returned an error status")?;
-
-            let body: SearxngResponse = response
-                .json()
-                .await
-                .context("Failed to parse SearXNG response")?;
-
+            let discovery = async {
+                let response = self
+                    .client
+                    .get(url)
+                    .send()
+                    .await
+                    .context("Failed to reach SearXNG")?
+                    .error_for_status()
+                    .context("SearXNG returned an error status")?;
+                response
+                    .json::<SearxngResponse>()
+                    .await
+                    .context("Failed to parse SearXNG response")
+            }
+            .await;
+            let body = match discovery {
+                Ok(body) => body,
+                Err(error) if !all_results.is_empty() => {
+                    warnings.push(format!("Search page {page} failed: {error:#}"));
+                    break;
+                }
+                Err(error) => return Err(error),
+            };
+            if !body.unresponsive_engines.is_empty() {
+                warnings.push(format!(
+                    "Search page {page}: {} engines unavailable",
+                    body.unresponsive_engines.len()
+                ));
+            }
             let results: Vec<SearchResult> = body
                 .results
                 .into_iter()
@@ -77,14 +103,19 @@ impl Searcher {
                 })
                 .collect();
 
-            all_results.extend(results);
+            all_results.extend(
+                results
+                    .into_iter()
+                    .filter(|result| seen.insert(result.url.clone()))
+                    .take(100usize.saturating_sub(all_results.len())),
+            );
 
             if pages > 1 {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }
         }
 
-        Ok(all_results)
+        Ok((all_results, warnings))
     }
 
     pub async fn search_pdf_only(&self, query: &str, pages: u32) -> Result<Vec<SearchResult>> {

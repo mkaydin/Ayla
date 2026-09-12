@@ -1,25 +1,28 @@
 [package]
 name = "ayla-core"
 version = "0.1.0"
-description = "Tauri-independent backend foundation for Ayla"
+description = "Host-independent backend foundation for Ayla"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88.0"
 
 [dependencies]
 ayla-ocr = { path = "../ayla-ocr" }
+ayla-code-analysis = { path = "../ayla-code-analysis" }
 ayla-research = { path = "../ayla-research" }
+ayla-stt = { path = "../ayla-stt" }
+ayla-tts = { path = "../ayla-tts" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
 log = "0.4"
-pdf-extract = "0.7"
+pdf-extract = "0.12.1"
 petgraph = { version = "0.6", features = ["serde-1"] }
 qdrant-client = { version = "=1.13.0", default-features = false }
-quick-xml = "0.37"
+quick-xml = "0.41"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sherpa-onnx = { path = "../../tts/sherpa-onnx/sherpa-onnx/rust/sherpa-onnx" }
+sha2 = "0.10"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 zip = "2.2"

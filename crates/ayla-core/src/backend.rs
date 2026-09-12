@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 /// Host-provided facilities needed by backend operations.
 ///
-/// The Tauri adapter supplies a Tauri event sink during migration. The Electron
 /// sidecar will supply a framed-protocol event sink without changing business
 /// logic.
 pub struct BackendFoundation {

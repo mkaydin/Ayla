@@ -13,8 +13,24 @@ use tokio::sync::{mpsc, Semaphore};
 
 const MAX_OUTSTANDING_REQUESTS: usize = 64;
 
+struct BackendLogger;
+impl log::Log for BackendLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+    }
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            eprintln!("{} {}", record.level(), record.args());
+        }
+    }
+    fn flush(&self) {}
+}
+static LOGGER: BackendLogger = BackendLogger;
+
 #[tokio::main]
 async fn main() {
+    let _ = log::set_logger(&LOGGER);
+    log::set_max_level(log::LevelFilter::Warn);
     if std::env::args().any(|argument| argument == "--protocol-version") {
         println!("{PROTOCOL_VERSION}");
         return;
@@ -37,6 +53,20 @@ async fn serve() -> Result<(), protocol::ProtocolError> {
         Ok::<(), protocol::ProtocolError>(())
     });
 
+    let data_root = std::env::var_os("AYLA_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| development_root().join("ayla-data"));
+    let _writer_guard = ayla_core::resources::DataWriterGuard::acquire(&data_root)
+        .map_err(protocol::ProtocolError::Io)?;
+    let recovered = if offline_mode() {
+        Ok(0)
+    } else {
+        ayla_core::recover_research_jobs(&data_root)
+    }
+    .map_err(|error| protocol::ProtocolError::Io(std::io::Error::other(error)))?;
+    if recovered > 0 {
+        log::warn!("Recovered {recovered} interrupted research job records");
+    }
     let resources = ResourceLocator::new(resource_directory(), development_root());
     let global_events: Arc<dyn EventSink> =
         Arc::new(ProtocolEventSink::global(output_sender.clone()));
@@ -192,7 +222,7 @@ fn development_root() -> PathBuf {
     std::env::var_os("AYLA_DEVELOPMENT_ROOT")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../src-tauri"))
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
 }
 
 fn offline_mode() -> bool {

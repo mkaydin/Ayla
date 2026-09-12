@@ -47,6 +47,16 @@ impl SurrealDB {
         user: &str,
         pass: &str,
     ) -> Result<Self, String> {
+        if ![ns, db_name].iter().all(|name| {
+            !name.is_empty()
+                && name.len() <= 128
+                && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        }) {
+            return Err(
+                "SurrealDB namespace/database must contain only letters, digits, and underscores"
+                    .into(),
+            );
+        }
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(5))
@@ -236,7 +246,7 @@ impl SurrealDB {
             return Err(format!(
                 "SurrealDB HTTP {}: {}",
                 status,
-                crate::memory::safe_truncate(&body, 200)
+                crate::memory::safe_truncate(&body, 600)
             ));
         }
 

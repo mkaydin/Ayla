@@ -1,19 +1,11 @@
 // ── Desktop runtime abstraction ────────────────────────────
 
-function tauriInvoke() {
-  const ipc = window.__TAURI_INTERNALS__;
-  return ipc?.invoke || ipc?.ipc?.invoke || ipc?.core?.invoke || null;
-}
-
 export function getDesktopRuntime() {
-  if (window.__TAURI_INTERNALS__) return 'tauri';
   if (window.aylaDesktop?.runtime === 'electron') return 'electron';
   return 'browser';
 }
 
 function getIpc() {
-  const invokeTauri = tauriInvoke();
-  if (invokeTauri) return invokeTauri;
   if (window.aylaDesktop?.invoke) {
     return window.aylaDesktop.invoke;
   }
@@ -29,8 +21,8 @@ export async function getRuntimeInfo() {
   const runtime = getDesktopRuntime();
   return {
     runtime,
-    backendAvailable: runtime === 'tauri',
-    backend: runtime === 'tauri' ? await getBackendStatus() : null,
+    backendAvailable: false,
+    backend: null,
     chrome: navigator.userAgentData?.brands
       ?.find(brand => brand.brand === 'Chromium')?.version
       || null,
@@ -51,16 +43,9 @@ export function invokeStreamCancelable(cmd, args, onEvent) {
   const requestId = crypto.randomUUID();
   const electron = window.aylaDesktop;
   let settled = false;
-  const promise = window.__TAURI_INTERNALS__
-    ? import('@tauri-apps/api/core').then(({ Channel }) => {
-      const channel = new Channel(onEvent);
-      return invoke(cmd, { ...args, onEvent: channel });
-    })
-    : electron?.stream
-      ? electron.stream(cmd, args, onEvent, requestId)
-      : Promise.reject(
-        new Error(`Rust streaming backend is not available in ${getDesktopRuntime()} mode`),
-      );
+  const promise = electron?.stream
+    ? electron.stream(cmd, args, onEvent, requestId)
+    : Promise.reject(new Error(`Rust streaming backend is not available in ${getDesktopRuntime()} mode`));
   promise.then(
     () => { settled = true; },
     () => { settled = true; },
@@ -103,7 +88,7 @@ export function invokeCancelable(cmd, args = {}) {
     () => { settled = true; },
   );
 
-  const cancelTauriProcess = async () => {
+  const cancelProcess = async () => {
     if (!processId) return false;
     return Boolean(await invoke('cancel_process', { pid: processId }));
   };
@@ -115,7 +100,7 @@ export function invokeCancelable(cmd, args = {}) {
       if (typeof value !== 'string' || !value) return;
       processId = value;
       if (cancelRequested && !electron?.cancelRequest) {
-        void cancelTauriProcess().catch(() => {});
+        void cancelProcess().catch(() => {});
       }
     },
     async cancel() {
@@ -124,23 +109,13 @@ export function invokeCancelable(cmd, args = {}) {
       if (electron?.cancelRequest) {
         return Boolean(await electron.cancelRequest(requestId));
       }
-      return cancelTauriProcess();
+      return cancelProcess();
     },
   });
 }
 
 export async function getBackendStatus() {
   if (window.aylaDesktop?.backendStatus) return window.aylaDesktop.backendStatus();
-  if (window.__TAURI_INTERNALS__) {
-    return {
-      state: 'ready',
-      backendAvailable: true,
-      backendVersion: 'tauri',
-      restartAttempt: 0,
-      nextRetryAt: null,
-      error: null,
-    };
-  }
   return {
     state: 'unavailable',
     backendAvailable: false,
@@ -163,49 +138,18 @@ export function listenBackendStatus(callback) {
   return () => {};
 }
 
-let eventListen = null;
-
 export async function listenEvent(event, cb) {
-  if (window.__TAURI_INTERNALS__) {
-    if (!eventListen) {
-      const mod = await import('@tauri-apps/api/event');
-      eventListen = mod.listen;
-    }
-    return eventListen(event, cb);
-  }
   if (window.aylaDesktop?.listen) return window.aylaDesktop.listen(event, cb);
   return () => {};
 }
 
 export async function selectFiles(options = {}) {
-  if (window.__TAURI_INTERNALS__) {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const selected = await open(options);
-    if (!selected) return [];
-    return Array.isArray(selected) ? selected : [selected];
-  }
-  if (window.aylaDesktop?.selectFiles) {
-    return window.aylaDesktop.selectFiles(options);
-  }
-  return null;
+  return window.aylaDesktop?.selectFiles ? window.aylaDesktop.selectFiles(options) : null;
 }
 
-let shellOpen = null;
-
 export async function openPdf(filePath) {
-  if (window.__TAURI_INTERNALS__) {
-    if (!shellOpen) {
-      const mod = await import('@tauri-apps/plugin-shell');
-      shellOpen = mod.open;
-    }
-    await shellOpen(filePath);
-    return;
-  }
-  if (window.aylaDesktop?.openPath) {
-    await window.aylaDesktop.openPath(filePath);
-    return;
-  }
-  window.open(filePath, '_blank');
+  if (!window.aylaDesktop?.openPath) throw new Error('Opening local files requires the desktop application');
+  await window.aylaDesktop.openPath(filePath);
 }
 
 export async function showDesktopNotification(payload) {

@@ -16,19 +16,34 @@ import { fitClusterCircle } from '../lib/kb-graph/cluster-geometry.js';
 
 /* ── State ──────────────────────────────────────────────── */
 let kbData      = { nodes: [], edges: [], files: [] };
+let graphV2Data = {
+  available: false,
+  nodes: [],
+  edges: [],
+  runs: [],
+  nodesTruncated: false,
+  edgesTruncated: false,
+  runsTruncated: false,
+};
 let selectedTab = 'graph';
+let selectedV2View = 'nodes';
 let selectedNode = null;
 let kbPanelRef  = null;
 let graphDataSignature = '';
 let cleanupRunning = false;
 let cleanupStatus = '';
+let graphV2RollbackRunning = false;
+let graphV2PageLoading = false;
+let graphV2MaintenanceRunning = false;
 
 const GRAPH_LAYOUT_STORAGE_KEY = 'ayla_kb_graph_layout';
 const GRAPH_POSITION_STORAGE_KEY = 'ayla_kb_gravity_positions_v1';
+const GRAPH_SCHEMA_STORAGE_KEY = 'ayla_kb_graph_schema_v2';
 const GRAPH_LAYOUT_CLASSIC = 'classic';
 const GRAPH_LAYOUT_GRAVITY = 'gravity';
 const GRAPH_COLORS = ['#38bdf8','#22d3ee','#2dd4bf','#60a5fa','#34d399','#67e8f9','#4ade80','#93c5fd','#14b8a6','#7dd3fc'];
 const DEFAULT_NODE_COLOR = '#36536b';
+
 
 const graphFilters = {
   nodeType: 'all',
@@ -42,6 +57,71 @@ function graphNodeSources(node) {
   return Array.isArray(node?.sources) && node.sources.length
     ? node.sources
     : (node?.source ? [node.source] : []);
+}
+
+function graphNodeDisplayName(node) {
+  return String(node?.displayName || node?.name || '');
+}
+
+function graphV2CanvasData() {
+  const nodes = (graphV2Data.nodes || []).map(node => ({
+    name: node.uid,
+    displayName: node.name,
+    type: node.node_type || 'Other',
+    label: node.label,
+    source: node.sources?.[0] || '',
+    sources: node.sources || [],
+    aliases: node.aliases || [],
+    meaning: node.meaning || '',
+    created: node.created || '',
+    origins: node.origins || [],
+    sourceLocations: node.source_locations || [],
+    confidence: node.confidence,
+    schema: 'v2',
+  }));
+  const edges = (graphV2Data.edges || []).map(edge => ({
+    from: edge.from_uid,
+    to: edge.to_uid,
+    relation: edge.relation,
+    confidence: edge.confidence,
+    sources: edge.sources || [],
+    origins: edge.origins || [],
+    sourceLocations: edge.source_locations || [],
+    uid: edge.uid,
+    schema: 'v2',
+  }));
+  return { nodes, edges };
+}
+
+function refreshActiveGraphData() {
+  const active = graphV2CanvasData();
+  graphNodes = active.nodes;
+  graphEdges = active.edges;
+  const nextSignature = JSON.stringify({
+    schema: 'v2',
+    nodes: graphNodes.map(node => [node.name, graphNodeDisplayName(node), node.sources || node.source || '']),
+    edges: graphEdges.map(edge => [edge.from, edge.relation, edge.to]),
+  });
+  if (nextSignature !== graphDataSignature) {
+    graphDataSignature = nextSignature;
+    layoutDirty[GRAPH_LAYOUT_CLASSIC] = true;
+    layoutDirty[GRAPH_LAYOUT_GRAVITY] = true;
+    for (const key of Object.keys(layoutPositions[GRAPH_LAYOUT_CLASSIC])) {
+      delete layoutPositions[GRAPH_LAYOUT_CLASSIC][key];
+    }
+    const liveNames = new Set(graphNodes.map(node => node.name));
+    for (const key of Object.keys(layoutPositions[GRAPH_LAYOUT_GRAVITY])) {
+      if (!liveNames.has(key)) delete layoutPositions[GRAPH_LAYOUT_GRAVITY][key];
+    }
+  }
+  if (selectedNode && !graphNodes.some(node => node.name === selectedNode.name)) {
+    selectedNode = null;
+    stopSelectedAnimation();
+  }
+  if (selectedClusterId && !gravityClusters.some(cluster => cluster.id === selectedClusterId)) {
+    selectedClusterId = null;
+  }
+  precompute();
 }
 
 function stableColorIndex(value) {
@@ -206,35 +286,11 @@ export function initKbPanel() {
 
 async function loadKbData() {
   if (hasDesktopBackend()) {
-    try { const data = await invoke('get_kb_data'); if (data) kbData = data; }
-    catch (e) { /* offline */ }
+    const structured = await invoke('get_graph_v2_data');
+    graphV2Data = structured;
+    kbData = { ...graphV2CanvasData(), files: [] };
   }
-  graphNodes = kbData.nodes || [];
-  graphEdges = kbData.edges || [];
-  const nextSignature = JSON.stringify({
-    nodes: graphNodes.map(node => [node.name, node.sources || node.source || '']),
-    edges: graphEdges.map(edge => [edge.from, edge.relation, edge.to]),
-  });
-  if (nextSignature !== graphDataSignature) {
-    graphDataSignature = nextSignature;
-    layoutDirty[GRAPH_LAYOUT_CLASSIC] = true;
-    layoutDirty[GRAPH_LAYOUT_GRAVITY] = true;
-    for (const key of Object.keys(layoutPositions[GRAPH_LAYOUT_CLASSIC])) {
-      delete layoutPositions[GRAPH_LAYOUT_CLASSIC][key];
-    }
-    const liveNames = new Set(graphNodes.map(node => node.name));
-    for (const key of Object.keys(layoutPositions[GRAPH_LAYOUT_GRAVITY])) {
-      if (!liveNames.has(key)) delete layoutPositions[GRAPH_LAYOUT_GRAVITY][key];
-    }
-  }
-  if (selectedNode && !graphNodes.some(node => node.name === selectedNode.name)) {
-    selectedNode = null;
-    stopSelectedAnimation();
-  }
-  if (selectedClusterId && !gravityClusters.some(cluster => cluster.id === selectedClusterId)) {
-    selectedClusterId = null;
-  }
-  precompute();
+  refreshActiveGraphData();
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -248,6 +304,8 @@ function renderKb(panel) {
       <div class="kb-tab ${selectedTab === 'graph' ? 'active' : ''}" data-tab="graph">Graph</div>
       <div class="kb-tab ${selectedTab === 'nodes' ? 'active' : ''}" data-tab="nodes">Nodes</div>
       <div class="kb-tab ${selectedTab === 'edges' ? 'active' : ''}" data-tab="edges">Edges</div>
+      <div class="kb-tab ${selectedTab === 'structured' ? 'active' : ''}" data-tab="structured">Structured</div>
+      <div class="kb-tab ${selectedTab === 'runs' ? 'active' : ''}" data-tab="runs">Runs</div>
       <div class="kb-tab ${selectedTab === 'files' ? 'active' : ''}" data-tab="files">Files</div>
     </div>
     <div id="kb-tab-content"></div>
@@ -276,6 +334,8 @@ function renderTabContent(panel) {
     case 'graph': renderGraphTab(content, panel); break;
     case 'nodes': renderNodesTab(content); break;
     case 'edges': renderEdgesTab(content); break;
+    case 'structured': renderStructuredTab(content); break;
+    case 'runs': renderGraphV2RunsTab(content, panel); break;
     case 'files': renderFilesTab(content); break;
   }
 }
@@ -505,6 +565,7 @@ function requestGravityLayout(container, { reset = false, fit = true } = {}) {
 
 function renderGraphTab(content, panel) {
   activateGraphLayout(graphLayoutMode);
+  const showingV2 = graphV2Data.available;
   const sourceValues = [...new Set(graphNodes.flatMap(graphNodeSources))]
     .sort((a, b) => a.localeCompare(b));
   const relationValues = [...new Set(graphEdges.map(edge => edge.relation).filter(Boolean))]
@@ -523,6 +584,7 @@ function renderGraphTab(content, panel) {
       <div class="kb-graph-layout-status" id="kb-graph-layout-status" hidden></div>
     </div>
     <div class="kb-graph-controls">
+      <span class="kb-graph-view-label">Graph v2 (UID)</span>
       <label class="kb-graph-view-label" for="kb-graph-view">View:</label>
       <select class="kb-select" id="kb-graph-view">
         <option value="${GRAPH_LAYOUT_CLASSIC}" ${graphLayoutMode === GRAPH_LAYOUT_CLASSIC ? 'selected' : ''}>Document Clusters</option>
@@ -553,8 +615,11 @@ function renderGraphTab(content, panel) {
         <input type="checkbox" id="kb-graph-provenance" ${graphFilters.showProvenance ? 'checked' : ''} /> Provenance
       </label>
       <button class="kb-graph-btn" id="kb-graph-layout">Re-layout</button>
+      ${showingV2 && (graphV2Data.nodesTruncated || graphV2Data.edgesTruncated)
+        ? `<button class="kb-graph-btn" id="kb-graph-load-more" ${graphV2PageLoading ? 'disabled' : ''}>${graphV2PageLoading ? 'Loading…' : 'Load more v2'}</button>`
+        : ''}
       <button class="kb-graph-btn" id="kb-graph-reset-focus" ${selectedClusterId || selectedNode ? '' : 'disabled'}>Reset focus</button>
-      <button class="kb-graph-btn accent" id="kb-graph-cleanup" ${cleanupRunning || !hasDesktopBackend() ? 'disabled' : ''}>
+      <button class="kb-graph-btn accent" id="kb-graph-cleanup" ${cleanupRunning || !hasDesktopBackend() ? 'disabled' : ''} title="Improve shared conversation and document concepts">
         ${cleanupRunning ? 'Analyzing…' : 'AI Analyze & Improve'}
       </button>
       <span class="kb-cleanup-status" id="kb-cleanup-status">${escapeHtml(cleanupStatus)}</span>
@@ -710,7 +775,8 @@ function renderGraphTab(content, panel) {
   document.getElementById('kb-graph-search')?.addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
     if (!q) { requestRender(); return; }
-    const hit = graphNodes.find(n => n.name.toLowerCase().includes(q));
+    const hit = graphNodes.find(n =>
+      n.name.toLowerCase().includes(q) || graphNodeDisplayName(n).toLowerCase().includes(q));
     if (hit && nodePos[hit.name]) {
       const p = nodePos[hit.name];
       graphView.ox = canvas.clientWidth / 2 / graphView.zoom - p.x;
@@ -771,6 +837,15 @@ function renderGraphTab(content, panel) {
       precompute();
       requestRender();
     }
+  });
+  document.getElementById('kb-graph-load-more')?.addEventListener('click', async () => {
+    try {
+      if (graphV2Data.nodesTruncated) await loadMoreGraphV2('nodes');
+      if (graphV2Data.edgesTruncated) await loadMoreGraphV2('edges');
+    } catch (error) {
+      alert(`Graph-v2 page failed: ${String(error)}`);
+    }
+    renderTabContent(panel);
   });
   document.getElementById('kb-graph-cleanup')?.addEventListener('click', async () => {
     if (!confirm('Run incremental graph improvement? Existing good meanings and relations will be skipped; only candidate duplicates and unresolved items are sent to the LLM. Only high-confidence changes will be applied.')) return;
@@ -1077,11 +1152,12 @@ function focusCluster(cluster, container) {
   fitGraphView(bounds, container.clientWidth, container.clientHeight);
   const detail = document.getElementById('kb-graph-detail');
   if (detail) {
+    const names = new Map(graphNodes.map(node => [node.name, graphNodeDisplayName(node)]));
     detail.innerHTML = `
       <div class="kb-graph-detail-name">${escapeHtml(cluster.label || 'Knowledge community')}</div>
       <div>Role: ${escapeHtml(cluster.role)}</div>
       <div>Nodes: ${cluster.nodeIds.length} · Sources: ${cluster.sourceIds.length}</div>
-      <div>Central concepts: ${escapeHtml((cluster.topNodeIds || []).join(', ') || 'none')}</div>
+      <div>Central concepts: ${escapeHtml((cluster.topNodeIds || []).map(id => names.get(id) || id).join(', ') || 'none')}</div>
     `;
   }
   const button = document.getElementById('kb-graph-reset-focus');
@@ -1097,10 +1173,13 @@ function selectNode(node) {
     const edges = graphEdges.filter(e => e.from === node.name || e.to === node.name);
     const nodeType = safeCssToken(node.type);
     detail.innerHTML = `
-      <div class="kb-graph-detail-name">${escapeHtml(node.name)}</div>
+      <div class="kb-graph-detail-name">${escapeHtml(graphNodeDisplayName(node))}</div>
       <div>Type: <span class="type-badge ${nodeType}">${escapeHtml(node.type || 'Other')}</span></div>
       <div>Degree: ${edges.length}</div>
       <div>Sources: ${escapeHtml((node.sources || (node.source ? [node.source] : [])).join(', ') || 'none')}</div>
+      ${node.schema === 'v2' ? `<div>UID: <span class="kb-v2-inline-uid">${escapeHtml(node.name)}</span></div>` : ''}
+      ${node.schema === 'v2' && node.origins?.length ? `<div>Origins: ${escapeHtml(node.origins.join(', '))}</div>` : ''}
+      ${node.schema === 'v2' && node.sourceLocations?.length ? `<div>Locations: ${escapeHtml(node.sourceLocations.join(', '))}</div>` : ''}
       ${node.meaning ? `<div class="kb-node-meaning">${escapeHtml(node.meaning)}</div>` : ''}
       ${Array.isArray(node.aliases) && node.aliases.length
         ? `<div>Aliases: ${escapeHtml(node.aliases.join(', '))}</div>`
@@ -1400,7 +1479,7 @@ function draw() {
       if (hasFocus && !focusNames.has(n.name)) continue;
 
       ctx.fillStyle = isHovered ? '#ffffff' : '#c8c4d0';
-      ctx.fillText(n.name, p.x, p.y + p.r + 12);
+      ctx.fillText(graphNodeDisplayName(n), p.x, p.y + p.r + 12);
     }
   }
 
@@ -1440,7 +1519,8 @@ function renderNodesTab(content) {
     const filter = document.getElementById('kb-nodes-filter')?.value || 'all';
     const filtered = graphNodes.filter(n => {
       if (filter !== 'all' && n.type !== filter) return false;
-      if (search && !n.name.toLowerCase().includes(search)) return false;
+      if (search && !n.name.toLowerCase().includes(search)
+          && !graphNodeDisplayName(n).toLowerCase().includes(search)) return false;
       return true;
     });
     const visible = filtered.slice(0, MAX_NODE_ROWS);
@@ -1452,7 +1532,7 @@ function renderNodesTab(content) {
     }
     tbody.innerHTML = visible.map(n => {
       const type = safeCssToken(n.type);
-      return `<tr><td>${escapeHtml(n.name)}</td><td><span class="type-badge ${type}">${escapeHtml(n.type || 'Other')}</span></td><td>${degMap[n.name] || 0}</td></tr>`;
+      return `<tr><td>${escapeHtml(graphNodeDisplayName(n))}${n.schema === 'v2' ? `<span class="kb-v2-uid">${escapeHtml(n.name)}</span>` : ''}</td><td><span class="type-badge ${type}">${escapeHtml(n.type || 'Other')}</span></td><td>${degMap[n.name] || 0}</td></tr>`;
     }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">No nodes found</td></tr>';
   }
   document.getElementById('kb-nodes-search')?.addEventListener('input', renderNodeTable);
@@ -1475,9 +1555,10 @@ function renderEdgesTab(content) {
   `;
   const tbody = document.getElementById('kb-edges-body');
   if (!tbody) return;
+  const names = new Map(graphNodes.map(node => [node.name, graphNodeDisplayName(node)]));
   const visibleEdges = graphEdges.slice(0, MAX_EDGE_ROWS);
   tbody.innerHTML = visibleEdges.map(e => `
-    <tr><td>${escapeHtml(e.from)}</td><td>${escapeHtml(e.relation)}</td><td>${escapeHtml(e.to)}</td><td>${(e.confidence||0).toFixed(2)}</td></tr>
+    <tr><td>${escapeHtml(names.get(e.from) || e.from)}</td><td>${escapeHtml(e.relation)}</td><td>${escapeHtml(names.get(e.to) || e.to)}</td><td>${(e.confidence||0).toFixed(2)}</td></tr>
   `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">No edges found</td></tr>';
   if (graphEdges.length > visibleEdges.length) {
     const row = document.createElement('tr');
@@ -1488,6 +1569,238 @@ function renderEdgesTab(content) {
     row.appendChild(cell);
     tbody.appendChild(row);
   }
+}
+
+/* ════════════════════════════════════════════════════════════
+   Graph-v2 structured data and audit history
+   ════════════════════════════════════════════════════════════ */
+
+function graphV2Values(records, field) {
+  return [...new Set(records.flatMap(record => Array.isArray(record?.[field]) ? record[field] : []))]
+    .filter(Boolean)
+    .sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+function graphV2Option(value) {
+  return `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`;
+}
+
+function mergeGraphV2Records(existing, incoming, key) {
+  const identity = record => record[key]
+    || `${record.backup_id || ''}:${record.committed_at || ''}:${record.source_id || ''}:${record.action || ''}`;
+  const merged = new Map(existing.map(record => [identity(record), record]));
+  incoming.forEach(record => merged.set(identity(record), record));
+  return [...merged.values()];
+}
+
+async function loadMoreGraphV2(kind) {
+  if (graphV2PageLoading) return;
+  const field = kind;
+  const key = kind === 'runs' ? 'event_id' : 'uid';
+  const limit = kind === 'nodes' ? 500 : kind === 'edges' ? 1000 : 100;
+  const current = Array.isArray(graphV2Data[field]) ? graphV2Data[field] : [];
+  graphV2PageLoading = true;
+  try {
+    const page = await invoke('get_graph_v2_page', {
+      kind,
+      offset: current.length,
+      limit,
+    });
+    graphV2Data[field] = mergeGraphV2Records(current, page?.[field] || [], key);
+    graphV2Data[`${kind}Truncated`] = Boolean(page?.hasMore);
+    refreshActiveGraphData();
+  } finally {
+    graphV2PageLoading = false;
+  }
+}
+
+function renderStructuredTab(content) {
+  if (!graphV2Data.available) {
+    content.innerHTML = '<div class="kb-v2-empty">Graph-v2 storage is unavailable. Start Ayla with its database to view structured OCR and code-analysis knowledge.</div>';
+    return;
+  }
+  const nodes = Array.isArray(graphV2Data.nodes) ? graphV2Data.nodes : [];
+  const edges = Array.isArray(graphV2Data.edges) ? graphV2Data.edges : [];
+  const origins = graphV2Values([...nodes, ...edges], 'origins');
+  const sources = graphV2Values([...nodes, ...edges], 'sources');
+  const labels = [...new Set(nodes.map(node => node.label).filter(Boolean))]
+    .sort((a, b) => String(a).localeCompare(String(b)));
+  content.innerHTML = `
+    <div class="kb-v2-summary">
+      <span><strong>${nodes.length.toLocaleString()}</strong> entities${graphV2Data.nodesTruncated ? '+' : ''}</span>
+      <span><strong>${edges.length.toLocaleString()}</strong> relations${graphV2Data.edgesTruncated ? '+' : ''}</span>
+      <span>UID-keyed schema v2</span>
+    </div>
+    <div class="kb-v2-view-toggle">
+      <button class="kb-graph-btn ${selectedV2View === 'nodes' ? 'accent' : ''}" data-v2-view="nodes">Entities</button>
+      <button class="kb-graph-btn ${selectedV2View === 'edges' ? 'accent' : ''}" data-v2-view="edges">Relations</button>
+    </div>
+    <div class="kb-table-toolbar kb-v2-filters">
+      <input class="kb-search-input" id="kb-v2-search" placeholder="Search structured knowledge..." />
+      <select class="kb-select" id="kb-v2-label">
+        <option value="all">All labels</option>${labels.map(graphV2Option).join('')}
+      </select>
+      <select class="kb-select" id="kb-v2-origin">
+        <option value="all">All origins</option>${origins.map(graphV2Option).join('')}
+      </select>
+      <select class="kb-select" id="kb-v2-source">
+        <option value="all">All sources</option>${sources.map(graphV2Option).join('')}
+      </select>
+      <span class="kb-row-count" id="kb-v2-count"></span>
+    </div>
+    <div class="kb-v2-table-wrap"><table class="kb-table">
+      <thead id="kb-v2-head"></thead><tbody id="kb-v2-body"></tbody>
+    </table></div>
+    ${(selectedV2View === 'nodes' ? graphV2Data.nodesTruncated : graphV2Data.edgesTruncated)
+      ? `<button class="kb-graph-btn kb-v2-load-more" id="kb-v2-load-more" ${graphV2PageLoading ? 'disabled' : ''}>${graphV2PageLoading ? 'Loading…' : `Load more ${selectedV2View === 'nodes' ? 'entities' : 'relations'}`}</button>`
+      : ''}
+  `;
+  content.querySelectorAll('[data-v2-view]').forEach(button => {
+    button.addEventListener('click', () => {
+      selectedV2View = button.dataset.v2View;
+      renderStructuredTab(content);
+    });
+  });
+  const renderRows = () => {
+    const search = String(document.getElementById('kb-v2-search')?.value || '').toLowerCase();
+    const label = document.getElementById('kb-v2-label')?.value || 'all';
+    const origin = document.getElementById('kb-v2-origin')?.value || 'all';
+    const source = document.getElementById('kb-v2-source')?.value || 'all';
+    const uidNames = new Map(nodes.map(node => [node.uid, node.name]));
+    const records = selectedV2View === 'nodes' ? nodes : edges;
+    const filtered = records.filter(record => {
+      if (selectedV2View === 'nodes' && label !== 'all' && record.label !== label) return false;
+      if (origin !== 'all' && !(record.origins || []).includes(origin)) return false;
+      if (source !== 'all' && !(record.sources || []).includes(source)) return false;
+      if (!search) return true;
+      const searchable = selectedV2View === 'nodes'
+        ? [record.uid, record.name, record.label, record.meaning, ...(record.source_locations || [])]
+        : [record.uid, record.relation, uidNames.get(record.from_uid), uidNames.get(record.to_uid), ...(record.source_locations || [])];
+      return searchable.some(value => String(value || '').toLowerCase().includes(search));
+    });
+    const visible = filtered.slice(0, selectedV2View === 'nodes' ? MAX_NODE_ROWS : MAX_EDGE_ROWS);
+    const count = document.getElementById('kb-v2-count');
+    if (count) count.textContent = filtered.length > visible.length
+      ? `${visible.length} of ${filtered.length}`
+      : `${filtered.length} ${selectedV2View === 'nodes' ? 'entities' : 'relations'}`;
+    const head = document.getElementById('kb-v2-head');
+    const body = document.getElementById('kb-v2-body');
+    if (!head || !body) return;
+    if (selectedV2View === 'nodes') {
+      head.innerHTML = '<tr><th>Entity</th><th>Label</th><th>Origin</th><th>Source</th><th>Confidence</th></tr>';
+      body.innerHTML = visible.map(node => `<tr title="${escapeHtml((node.source_locations || []).join(', '))}">
+        <td><span class="kb-v2-primary">${escapeHtml(node.name)}</span><span class="kb-v2-uid">${escapeHtml(node.uid)}</span></td>
+        <td>${escapeHtml(node.label || 'Other')}</td>
+        <td>${escapeHtml((node.origins || []).join(', ') || '-')}</td>
+        <td>${escapeHtml((node.sources || []).join(', ') || '-')}</td>
+        <td>${Number(node.confidence || 0).toFixed(2)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="kb-table-limit">No structured entities found</td></tr>';
+    } else {
+      head.innerHTML = '<tr><th>From</th><th>Relation</th><th>To</th><th>Origin</th><th>Source</th></tr>';
+      body.innerHTML = visible.map(edge => `<tr title="${escapeHtml((edge.source_locations || []).join(', '))}">
+        <td>${escapeHtml(uidNames.get(edge.from_uid) || edge.from_uid)}</td>
+        <td>${escapeHtml(edge.relation)}</td>
+        <td>${escapeHtml(uidNames.get(edge.to_uid) || edge.to_uid)}</td>
+        <td>${escapeHtml((edge.origins || []).join(', ') || '-')}</td>
+        <td>${escapeHtml((edge.sources || []).join(', ') || '-')}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="kb-table-limit">No structured relations found</td></tr>';
+    }
+  };
+  ['kb-v2-search', 'kb-v2-label', 'kb-v2-origin', 'kb-v2-source'].forEach(id => {
+    document.getElementById(id)?.addEventListener(id === 'kb-v2-search' ? 'input' : 'change', renderRows);
+  });
+  document.getElementById('kb-v2-load-more')?.addEventListener('click', async () => {
+    try {
+      await loadMoreGraphV2(selectedV2View);
+      renderStructuredTab(content);
+    } catch (error) {
+      alert(`Graph-v2 page failed: ${String(error)}`);
+      renderStructuredTab(content);
+    }
+  });
+  renderRows();
+}
+
+function graphRunTitle(run) {
+  if (run.action === 'rollback') return `Restored ${String(run.target_backup_id || '').slice(0, 8)}`;
+  if (run.action === 'legacy_sync') return 'Legacy graph synchronization';
+  if (String(run.source_id || '').startsWith('ocr:')) return 'OCR document';
+  if (String(run.source_id || '').startsWith('code-analysis:')) return 'Code analysis';
+  return run.action === 'remove' ? 'Source removal' : 'Structured import';
+}
+
+function renderGraphV2RunsTab(content, panel) {
+  if (!graphV2Data.available) {
+    content.innerHTML = '<div class="kb-v2-empty">Graph-v2 run history is unavailable while the database is offline.</div>';
+    return;
+  }
+  const runs = Array.isArray(graphV2Data.runs) ? graphV2Data.runs : [];
+  content.innerHTML = `
+    <div class="kb-v2-summary">
+      <span><strong>${runs.length}</strong> committed operations${graphV2Data.runsTruncated ? '+' : ''}</span>
+      <span>Every restore creates a recovery backup first</span>
+      <button class="kb-graph-btn" id="kb-v2-prune" ${graphV2MaintenanceRunning || !runs.length ? 'disabled' : ''}>${graphV2MaintenanceRunning ? 'Pruning…' : 'Keep newest 25 backups'}</button>
+    </div>
+    <div class="kb-v2-table-wrap"><table class="kb-table">
+      <thead><tr><th>Operation</th><th>Source</th><th>Affected</th><th>Snapshot</th><th>Committed</th><th>Recovery</th></tr></thead>
+      <tbody>${runs.map(run => {
+        const backup = String(run.backup_id || '');
+        const canRestore = run.backup_available !== false && /^[a-f0-9]{32}$/i.test(backup);
+        return `<tr>
+          <td><span class="kb-v2-primary">${escapeHtml(graphRunTitle(run))}</span><span class="kb-v2-uid">${escapeHtml(run.action || 'import')}</span></td>
+          <td title="${escapeHtml(run.source_id || '')}">${escapeHtml(run.source_id || '-')}</td>
+          <td>${Number(run.affected_node_count || 0)} entities / ${Number(run.affected_edge_count || 0)} relations</td>
+          <td>${Number(run.node_count || 0)} / ${Number(run.edge_count || 0)}</td>
+          <td>${escapeHtml(String(run.committed_at || '').replace('T', ' ').slice(0, 19) || '-')}</td>
+          <td>${canRestore ? `<button class="kb-graph-btn" data-v2-restore="${backup}" ${graphV2RollbackRunning ? 'disabled' : ''}>Restore before</button>` : '-'}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" class="kb-table-limit">No Graph-v2 operations yet</td></tr>'}</tbody>
+    </table></div>
+    ${graphV2Data.runsTruncated ? `<button class="kb-graph-btn kb-v2-load-more" id="kb-v2-load-runs" ${graphV2PageLoading ? 'disabled' : ''}>${graphV2PageLoading ? 'Loading…' : 'Load older runs'}</button>` : ''}
+  `;
+  content.querySelectorAll('[data-v2-restore]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const backupId = button.dataset.v2Restore;
+      if (graphV2RollbackRunning || !confirm('Restore graph data from before this operation? The current graph is backed up first. Document and vector approval states remain in effect.')) return;
+      graphV2RollbackRunning = true;
+      renderGraphV2RunsTab(content, panel);
+      try {
+        await invoke('rollback_graph_v2', { backupId });
+        await loadKbData();
+        graphV2RollbackRunning = false;
+        renderKb(panel);
+      } catch (error) {
+        graphV2RollbackRunning = false;
+        renderGraphV2RunsTab(content, panel);
+        alert(`Graph-v2 restore failed: ${String(error)}`);
+        return;
+      }
+    });
+  });
+  document.getElementById('kb-v2-load-runs')?.addEventListener('click', async () => {
+    try {
+      await loadMoreGraphV2('runs');
+    } catch (error) {
+      alert(`Graph-v2 run page failed: ${String(error)}`);
+    }
+    renderGraphV2RunsTab(content, panel);
+  });
+  document.getElementById('kb-v2-prune')?.addEventListener('click', async () => {
+    if (graphV2MaintenanceRunning
+        || !confirm('Keep the newest 25 Graph-v2 recovery backups and expire older backup tables? Audit history will remain.')) return;
+    graphV2MaintenanceRunning = true;
+    renderGraphV2RunsTab(content, panel);
+    try {
+      const result = await invoke('prune_graph_v2_backups', { retention: 25 });
+      await loadKbData();
+      alert(`Graph-v2 backup maintenance complete: ${Number(result?.retained || 0)} retained, ${Number(result?.pruned || 0)} pruned.`);
+    } catch (error) {
+      alert(`Graph-v2 backup maintenance failed: ${String(error)}`);
+    } finally {
+      graphV2MaintenanceRunning = false;
+      renderKb(panel);
+    }
+  });
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -1518,10 +1831,11 @@ function renderFilesTable(content) {
     : files.map(f => {
       const name = escapeHtml(f.name || '?');
       return `<tr>
-      <td>${name}</td><td>${(f.size||0).toLocaleString()}</td><td>${escapeHtml(f.source || '-')}</td><td>${escapeHtml((f.date || '').slice(0,10))}</td>
+      <td>${name}${f.status && f.status !== 'committed' ? `<br><small>${escapeHtml(f.status)} · excluded from retrieval</small>` : ''}</td><td>${(f.size||0).toLocaleString()}</td><td>${escapeHtml(f.source || '-')}</td><td>${escapeHtml((f.date || '').slice(0,10))}</td>
       <td style="white-space:nowrap">
-        ${f.path ? `<button class="kb-open-btn" data-open-file="${name}">Open</button>` : ''}
+        ${f.path?.startsWith('/') ? `<button class="kb-open-btn" data-open-file="${name}">Open</button>` : ''}
         <button class="kb-open-btn" data-view-ocr="${name}">View</button>
+        ${f.status === 'failed' ? `<button class="kb-open-btn" data-retry-file="${name}">Retry approval</button>` : ''}
         <button class="kb-delete-btn" data-delete-file="${name}">Delete</button>
       </td></tr>`;
     }).join('');
@@ -1548,6 +1862,19 @@ function renderFilesTable(content) {
         body.innerHTML = `<button class="ocr-back-btn" id="ocr-kb-back-btn">← Back</button><div style="padding:12px;color:var(--text-secondary)">Failed: ${escapeHtml(e)}</div>`;
         document.getElementById('ocr-kb-back-btn').addEventListener('click', () => import('./ocr-panel.js').then(m => m.resetOcrView()));
       }
+    });
+  });
+  tbody.querySelectorAll('[data-retry-file]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const file = files.find(f => f.name === btn.dataset.retryFile);
+      btn.disabled = true;
+      try {
+        const text = file.text || await invoke('get_document_text', { name: file.name });
+        if (!text) throw new Error('Approval input is unavailable. Start storage and retry, or reprocess the source.');
+        await invoke('commit_document', { name: file.name, path: file.path, chars: file.size, sourceType: file.source, text });
+        events.emit('kb-refresh');
+      } catch (error) { alert('Approval failed: ' + (error.message || error)); }
+      finally { btn.disabled = false; }
     });
   });
   tbody.querySelectorAll('[data-delete-file]').forEach(btn => {

@@ -9,14 +9,13 @@ use crate::searcher::Searcher;
 use crate::synthesizer::Synthesizer;
 use crate::{ProgressCallback, ResearchProgress};
 use anyhow::{Context, Result};
+use futures::{stream, StreamExt};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-const MAX_CONCURRENT_DOWNLOADS: usize = 10;
-const MAX_CONCURRENT_RENDERS: usize = 6;
+const MAX_CONCURRENT_DOWNLOADS: usize = 4;
+const MAX_CONCURRENT_RENDERS: usize = 3;
 const MAX_TEXT_EXTRACT_CHARS: usize = 80000;
 
 #[derive(Debug, Clone)]
@@ -114,9 +113,9 @@ impl Orchestrator {
         info!("Enriched query: {}", enriched);
 
         Self::notify(progress, "searching", 15, "Querying scientific sources");
-        let results = self
+        let (results, discovery_warnings) = self
             .searcher
-            .search(&enriched, search_pages)
+            .search_with_outcome(&enriched, search_pages)
             .await
             .context("Search failed")?;
 
@@ -180,11 +179,36 @@ impl Orchestrator {
             "Synthesizing research findings",
         );
         let synthesizer = Synthesizer::new(self.ai.clone());
+        let mut warnings = discovery_warnings;
+        let source_outcomes: Vec<_> = results.iter().take(100).map(|source| {
+            let analyzed = ranked.iter().any(|paper| paper.source_url == source.url);
+            let extracted = all_sources.iter().any(|item| item.source_url == source.url);
+            let fetched = downloaded.iter().any(|item| item.original_url == source.url) || rendered.iter().any(|item| item.url == source.url);
+            serde_json::json!({"url": source.url, "title": source.title, "status": if analyzed { "analyzed" } else if extracted { "extracted" } else if fetched { "fetched" } else { "unavailable_or_unselected" }})
+        }).collect();
+        if ranked.len()
+            < all_sources
+                .iter()
+                .filter(|source| source.text.len() > 100)
+                .take(max_papers.min(10))
+                .count()
+        {
+            warnings.push("Some selected sources could not be analyzed".into());
+        }
+        if downloaded.len() < pdf_urls.len().min(10)
+            || rendered.len() < web_urls.len().min(max_papers.min(10))
+        {
+            warnings.push("Some selected sources could not be fetched".into());
+        }
+        if ranked.is_empty() {
+            warnings.push("No sources could be analyzed".to_string());
+        }
         let synthesis = synthesizer
             .synthesize(&enriched, &ranked)
             .await
             .unwrap_or_else(|e| {
                 error!("Synthesis failed: {}", e);
+                warnings.push(format!("Synthesis failed: {e}"));
                 SynthesisReport {
                     query: enriched.clone(),
                     cross_cutting_themes: vec![],
@@ -197,6 +221,15 @@ impl Orchestrator {
             });
 
         let report = SessionReport {
+            source_outcomes,
+            model: self.ai.model().to_string(),
+            status: if warnings.is_empty() {
+                "complete"
+            } else {
+                "partial"
+            }
+            .into(),
+            warnings,
             session_id,
             query: query.to_string(),
             enriched_query: enriched,
@@ -206,11 +239,12 @@ impl Orchestrator {
             papers_analyzed: ranked,
             synthesis,
             download_dir: session_dir,
+            downloaded_sources: downloaded,
         };
 
         Self::notify(progress, "saving", 95, "Saving the research report");
         self.save_report(&report).await?;
-        Self::notify(progress, "complete", 100, "Research complete");
+        Self::notify(progress, &report.status, 100, "Research finished");
 
         Ok(report)
     }
@@ -224,27 +258,21 @@ impl Orchestrator {
             return vec![];
         }
 
-        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
-        let handles: Vec<_> = urls
-            .iter()
+        let urls: Vec<_> = urls.iter().take(10).cloned().collect();
+        let futures: Vec<_> = urls
+            .into_iter()
             .map(|url| {
                 let downloader = self.downloader.clone();
-                let url = url.clone();
-                let session_dir = session_dir.to_path_buf();
-                let sem = semaphore.clone();
-                tokio::spawn(async move {
-                    let _permit = sem.acquire().await;
-                    downloader.download_pdf(&url, &session_dir).await
-                })
+                let directory = session_dir.to_path_buf();
+                async move { downloader.download_pdf(&url, &directory).await }
             })
             .collect();
-
+        let mut pending = stream::iter(futures).buffer_unordered(MAX_CONCURRENT_DOWNLOADS);
         let mut results = Vec::new();
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(pdf)) => results.push(pdf),
-                Ok(Err(e)) => warn!("PDF download failed: {}", e),
-                Err(e) => warn!("Download task panicked: {}", e),
+        while let Some(result) = pending.next().await {
+            match result {
+                Ok(pdf) => results.push(pdf),
+                Err(error) => warn!("PDF download failed: {error}"),
             }
         }
         results
@@ -259,28 +287,24 @@ impl Orchestrator {
             return vec![];
         }
 
-        let to_render: Vec<_> = results.iter().take(max_pages).collect();
-
-        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_RENDERS));
-        let handles: Vec<_> = to_render
+        let sources: Vec<_> = results
             .iter()
-            .map(|result| {
+            .take(max_pages.min(10))
+            .map(|source| source.url.clone())
+            .collect();
+        let futures: Vec<_> = sources
+            .into_iter()
+            .map(|url| {
                 let renderer = self.renderer.clone();
-                let url = result.url.clone();
-                let sem = semaphore.clone();
-                tokio::spawn(async move {
-                    let _permit = sem.acquire().await;
-                    renderer.fetch_rendered(&url).await
-                })
+                async move { renderer.fetch_rendered(&url).await }
             })
             .collect();
-
+        let mut pending = stream::iter(futures).buffer_unordered(MAX_CONCURRENT_RENDERS);
         let mut rendered = Vec::new();
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(result)) => rendered.push(result.page),
-                Ok(Err(e)) => warn!("Render failed: {}", e),
-                Err(e) => warn!("Render task panicked: {}", e),
+        while let Some(result) = pending.next().await {
+            match result {
+                Ok(result) => rendered.push(result.page),
+                Err(error) => warn!("Render failed: {error}"),
             }
         }
         rendered
@@ -296,34 +320,29 @@ impl Orchestrator {
             return vec![];
         }
 
-        let to_analyze: Vec<_> = sources
+        let sources: Vec<_> = sources
             .iter()
-            .filter(|s| s.text.len() > 100)
-            .take(max_papers)
+            .filter(|source| source.text.len() > 100)
+            .take(max_papers.min(10))
+            .cloned()
             .collect();
-
-        let semaphore = Arc::new(Semaphore::new(self.ai.recommended_concurrency()));
-        let handles: Vec<_> = to_analyze
-            .iter()
+        let futures: Vec<_> = sources
+            .into_iter()
             .map(|source| {
                 let ai = self.ai.clone();
-                let url = source.source_url.clone();
-                let text = source.text.clone();
                 let query = query.to_string();
-                let sem = semaphore.clone();
-                tokio::spawn(async move {
-                    let _permit = sem.acquire().await;
-                    ai.analyze_paper(&url, &text, &query).await
-                })
+                async move {
+                    ai.analyze_paper(&source.source_url, &source.text, &query)
+                        .await
+                }
             })
             .collect();
-
+        let mut pending = stream::iter(futures).buffer_unordered(self.ai.recommended_concurrency());
         let mut analyses = Vec::new();
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(analysis)) => analyses.push(analysis),
-                Ok(Err(e)) => warn!("Paper analysis failed: {}", e),
-                Err(e) => warn!("Analysis task panicked: {}", e),
+        while let Some(result) = pending.next().await {
+            match result {
+                Ok(analysis) => analyses.push(analysis),
+                Err(error) => warn!("Paper analysis failed: {error}"),
             }
         }
         analyses

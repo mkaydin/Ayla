@@ -1,5 +1,10 @@
 appId: com.ayla.coworker.chromium
 productName: Ayla
+afterPack: electron/after-pack.mjs
+toolsets:
+  appimage: '1.0.3'
+appImage:
+  executableArgs: []
 directories:
   output: release/electron
 files:
@@ -10,15 +15,31 @@ files:
   - electron/sidecar-manager.mjs
   - electron/sidecar-protocol.mjs
   - electron/static-server.mjs
+  - electron/storage-recovery.mjs
+  - electron/support-diagnostics.mjs
   - package.json
-  - "!node_modules/**/*"
+  - LICENSE
 extraResources:
+  - from: .electron-resources/lib
+    to: lib
+  - from: .electron-resources/native-manifest.json
+    to: native-manifest.json
+  - from: .electron-resources/licenses
+    to: licenses
+  - from: LICENSE
+    to: licenses/AYLA_LICENSE
+  - from: vendor/sherpa-onnx/sherpa-onnx/LICENSE
+    to: licenses/SHERPA_ONNX_LICENSE
   - from: electron/assets/icon.png
     to: assets/icon.png
   - from: .electron-resources/bin/ayla-sidecar
     to: bin/ayla-sidecar
-  - from: tts/tts_piper_amy_low
-    to: tts/tts_piper_amy_low
+  - from: .electron-resources/tts/supertonic3-int8
+    to: tts/supertonic3-int8
+  - from: .electron-resources/models/model-manifest.json
+    to: models/model-manifest.json
+  - from: .electron-resources/models/stt
+    to: models/stt
 asar: true
 compression: normal
 npmRebuild: false
@@ -32,9 +53,8 @@ linux:
   icon: electron/assets/icon.png
   target:
     - AppImage
-    - deb
 win:
   icon: electron/assets/icon.ico
 mac:
   icon: electron/assets/icon.png
-artifactName: ${productName}-${version}-${arch}.${ext}
+artifactName: ${productName}-${version}-linux-${arch}.${ext}

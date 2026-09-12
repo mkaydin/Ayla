@@ -1,0 +1,38 @@
+[
+  {
+    "name": "adobe-cmap-parser",
+    "version": "0.4.1",
+    "repository": "https://github.com/jrmuizel/adobe-cmap-parser",
+    "revision": "ac107d55f0d31a9d47955082238ab9e4fb157cdb"
+  },
+  {
+    "name": "tree-sitter",
+    "version": "0.25.10",
+    "repository": "https://github.com/tree-sitter/tree-sitter",
+    "revision": "da6fe9beb4f7f67beb75914ca8e0d48ae48d6406"
+  },
+  {
+    "name": "tree-sitter-typescript",
+    "version": "0.23.2",
+    "repository": "https://github.com/tree-sitter/tree-sitter-typescript",
+    "revision": "f975a621f4e7f532fe322e13c4f79495e0a7b2e7"
+  },
+  {
+    "name": "type1-encoding-parser",
+    "version": "0.1.1",
+    "repository": "https://github.com/jrmuizel/type1-encoding-parser",
+    "revision": "55d193e28c9a5909be02a5b1f91fd3f76b076747"
+  },
+  {
+    "name": "pdf-extract",
+    "version": "0.12.1",
+    "repository": "https://github.com/jrmuizel/pdf-extract",
+    "revision": "47b792ba04c5f3b6e478072b2efb8e1a2a06ec7e"
+  },
+  {
+    "name": "defmt-parser",
+    "version": "1.0.0",
+    "repository": "https://github.com/knurling-rs/defmt",
+    "revision": "4a8cdb44891ed57b8ff5a023b6bec7137c48708f"
+  }
+]

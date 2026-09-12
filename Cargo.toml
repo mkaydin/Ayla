@@ -1,9 +1,12 @@
 [workspace]
 members = [
+    "crates/ayla-code-analysis",
     "crates/ayla-core",
     "crates/ayla-ocr",
     "crates/ayla-research",
     "crates/ayla-sidecar",
+    "crates/ayla-stt",
+    "crates/ayla-tts",
 ]
 resolver = "2"
-exclude = ["src-tauri", "tts/sherpa-onnx/sherpa-onnx/rust/sherpa-onnx"]
+exclude = ["vendor/sherpa-onnx/sherpa-onnx", "vendor/sherpa-onnx/sherpa-onnx-sys"]

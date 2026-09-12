@@ -10,6 +10,7 @@ pub struct DocumentStore {
     qdrant: Arc<QdrantDB>,
     embedder: Embedder,
     embed_dim: u64,
+    db: Option<Arc<crate::db::surreal::SurrealDB>>,
 }
 
 impl DocumentStore {
@@ -18,7 +19,13 @@ impl DocumentStore {
             qdrant,
             embedder,
             embed_dim,
+            db: None,
         }
+    }
+
+    pub fn with_database(mut self, db: Arc<crate::db::surreal::SurrealDB>) -> Self {
+        self.db = Some(db);
+        self
     }
 
     pub async fn init(&self) -> Result<(), String> {
@@ -73,10 +80,49 @@ impl DocumentStore {
 
     pub async fn search(&self, query: &str, limit: u64) -> Result<Vec<(String, f32)>, String> {
         let vector = self.embedder.embed(query).await?;
-        let results = self.qdrant.search("documents", vector, limit).await?;
+        let results = self
+            .qdrant
+            .search_with_payload("documents", vector, limit.saturating_mul(4).min(80))
+            .await?;
+        let mut blocked = std::collections::HashSet::new();
+        if let Some(db) = &self.db {
+            for query in [
+                "SELECT name FROM kb_file WHERE status IN ['failed', 'deleting'];",
+                "SELECT name FROM knowledge_operation WHERE status != 'committed';",
+            ] {
+                for row in db.query(query).await? {
+                    if let Some(name) = row.get("name").and_then(|v| v.as_str()) {
+                        blocked.insert(name.to_string());
+                    }
+                }
+            }
+        }
         Ok(results
             .into_iter()
-            .map(|(_, score, text)| (text, score))
+            .filter_map(|point| {
+                let string = |key: &str| {
+                    point
+                        .payload
+                        .get(key)
+                        .and_then(|v| v.kind.as_ref())
+                        .and_then(|v| {
+                            if let value::Kind::StringValue(s) = v {
+                                Some(s.as_str())
+                            } else {
+                                None
+                            }
+                        })
+                };
+                let filename = string("filename")?;
+                if blocked.contains(filename) {
+                    return None;
+                }
+                Some((
+                    format!("[Document source: {filename}] {}", string("text")?),
+                    point.score,
+                ))
+            })
+            .take(limit as usize)
             .collect())
     }
 
@@ -93,8 +139,7 @@ impl DocumentStore {
     /// same file re-ingested after restart overwrites the same points instead of creating
     /// duplicates (was: std DefaultHasher which is randomized per-process — issue R19).
     pub fn chunk_id(filename: &str, idx: u32) -> u64 {
-        let base = fnv1a_64(filename.as_bytes()) % 1_000_000;
-        base * 100_000 + idx as u64
+        fnv1a_64(format!("{filename}\0{idx}").as_bytes())
     }
 }
 

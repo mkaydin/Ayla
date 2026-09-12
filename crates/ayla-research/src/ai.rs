@@ -41,6 +41,10 @@ impl AiClient {
         self
     }
 
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
     pub fn recommended_concurrency(&self) -> usize {
         if self.model.to_ascii_lowercase().contains(":cloud") {
             2

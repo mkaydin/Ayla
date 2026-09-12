@@ -1,3 +1,5 @@
+> Historical design record. Runtime and setup instructions are superseded by [README](../README.md) and the [production readiness plan](PRODUCTION_READINESS_PLAN.md).
+
 # Information Gathering Tools — Integration Plan
 
 ## Integrating `ocr_helper_system` and `meta_search_Js_render` into Alice's Memory System

@@ -9,29 +9,70 @@ use std::collections::HashMap;
 
 pub struct QdrantDB {
     client: Qdrant,
+    collection_prefix: String,
 }
 
 impl QdrantDB {
     pub async fn connect(url: &str) -> Result<Self, String> {
+        Self::connect_with_prefix(
+            url,
+            &std::env::var("AYLA_QDRANT_COLLECTION_PREFIX").unwrap_or_default(),
+        )
+        .await
+    }
+
+    pub async fn connect_with_prefix(url: &str, prefix: &str) -> Result<Self, String> {
         let client = Qdrant::from_url(url)
             .build()
             .map_err(|e: QdrantError| format!("Qdrant connect: {}", e))?;
-        Ok(Self { client })
+        let collection_prefix = prefix.to_string();
+        if !collection_prefix
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
+            return Err(
+                "Qdrant collection prefix must contain only letters, digits, and underscores"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            client,
+            collection_prefix,
+        })
+    }
+
+    fn collection(&self, name: &str) -> String {
+        format!("{}{}", self.collection_prefix, name)
     }
 
     pub async fn ensure_collection(&self, name: &str, dim: u64) -> Result<(), String> {
+        let name = self.collection(name);
         let exists = self
             .client
-            .collection_exists(name)
+            .collection_exists(&name)
             .await
             .map_err(|e| e.to_string())?;
         if exists {
-            return Ok(());
+            let info = self
+                .client
+                .collection_info(&name)
+                .await
+                .map_err(|e| e.to_string())?;
+            let params = info
+                .result
+                .and_then(|i| i.config)
+                .and_then(|c| c.params)
+                .and_then(|p| p.vectors_config)
+                .and_then(|v| v.config);
+            match params {
+                Some(qdrant_client::qdrant::vectors_config::Config::Params(p)) if p.size == dim => return Ok(()),
+                _ => return Err(format!("Collection {name} has incompatible vectors; expected {dim} dimensions. Reindex into a new collection.")),
+            }
         }
 
         self.client
             .create_collection(
-                CreateCollectionBuilder::new(name)
+                CreateCollectionBuilder::new(&name)
                     .vectors_config(VectorParamsBuilder::new(dim, Distance::Cosine)),
             )
             .await
@@ -82,10 +123,9 @@ impl QdrantDB {
         };
 
         self.client
-            .upsert_points(UpsertPointsBuilder::new(
-                collection.to_string(),
-                vec![point],
-            ))
+            .upsert_points(
+                UpsertPointsBuilder::new(self.collection(collection), vec![point]).wait(true),
+            )
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -101,13 +141,29 @@ impl QdrantDB {
         let filter = Filter::must([Condition::matches(field.to_string(), value.to_string())]);
         self.client
             .delete_points(
-                DeletePointsBuilder::new(collection.to_string())
+                DeletePointsBuilder::new(self.collection(collection))
                     .points(filter)
                     .wait(true),
             )
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    pub async fn search_with_payload(
+        &self,
+        collection: &str,
+        vector: Vec<f32>,
+        limit: u64,
+    ) -> Result<Vec<ScoredPoint>, String> {
+        self.client
+            .search_points(
+                SearchPointsBuilder::new(self.collection(collection), vector, limit)
+                    .with_payload(true),
+            )
+            .await
+            .map(|response| response.result)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn search(
@@ -118,7 +174,10 @@ impl QdrantDB {
     ) -> Result<Vec<(u64, f32, String)>, String> {
         let response = self
             .client
-            .search_points(SearchPointsBuilder::new(collection, vector, limit).with_payload(true))
+            .search_points(
+                SearchPointsBuilder::new(self.collection(collection), vector, limit)
+                    .with_payload(true),
+            )
             .await
             .map_err(|e| e.to_string())?;
 

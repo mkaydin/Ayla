@@ -1,3 +1,5 @@
+> Historical design record. Runtime and setup instructions are superseded by [README](../README.md) and the [production readiness plan](PRODUCTION_READINESS_PLAN.md).
+
 # Local Voice Assistant Architecture Plan
 
 **Target Platform:** Tauri Desktop Application (Rust + React/TypeScript)

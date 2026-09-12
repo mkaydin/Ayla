@@ -20,6 +20,7 @@
 
 .kb-tabs {
   display: flex;
+  overflow-x: auto;
   border-bottom: 1px solid var(--border-default);
   margin-bottom: var(--space-md);
   flex-shrink: 0;
@@ -275,6 +276,88 @@
 
 .kb-table tr:hover td {
   background: rgba(255,255,255,0.02);
+}
+
+.kb-v2-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-sm);
+  border: 1px solid rgba(56,189,248,0.16);
+  border-radius: 6px;
+  background: rgba(14,165,233,0.06);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.kb-v2-summary strong {
+  color: #bae6fd;
+}
+
+.kb-v2-view-toggle {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.kb-v2-filters {
+  flex-wrap: wrap;
+}
+
+.kb-v2-filters .kb-search-input {
+  min-width: 180px;
+}
+
+.kb-v2-filters .kb-select {
+  max-width: 160px;
+}
+
+.kb-v2-table-wrap {
+  flex: 1;
+  overflow: auto;
+}
+
+.kb-v2-table-wrap .kb-table {
+  min-width: 760px;
+}
+
+.kb-v2-load-more {
+  align-self: center;
+  margin-top: var(--space-sm);
+}
+
+.kb-v2-primary,
+.kb-v2-uid {
+  display: block;
+}
+
+.kb-v2-inline-uid {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.kb-v2-primary {
+  color: var(--text-primary);
+}
+
+.kb-v2-uid {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font: 10px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-v2-empty {
+  margin: auto;
+  max-width: 460px;
+  padding: var(--space-xl);
+  color: var(--text-muted);
+  line-height: 1.5;
+  text-align: center;
 }
 
 .kb-table .kb-delete-btn {

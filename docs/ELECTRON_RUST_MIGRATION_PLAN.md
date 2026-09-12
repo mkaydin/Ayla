@@ -1,3 +1,5 @@
+> Historical design record. Runtime and setup instructions are superseded by [README](../README.md) and the [production readiness plan](PRODUCTION_READINESS_PLAN.md).
+
 # ALICE — Full Electron + Rust Backend Migration Plan
 
 ## 1. Objective

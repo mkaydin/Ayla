@@ -1,3 +1,4 @@
+import { diagnosticEnvironment, backendCommandCatalog } from './diagnostic-environment.mjs';
 import path from 'node:path';
 import process from 'node:process';
 import {
@@ -7,11 +8,11 @@ import {
 
 const root = path.resolve(import.meta.dirname, '..');
 const manager = new SidecarManager({
-  binaryPath: developmentSidecarPath(root),
+  binaryPath: process.env.AYLA_SIDECAR_BIN || developmentSidecarPath(root),
   cwd: root,
   env: {
-    ...process.env,
-    AYLA_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
+    ...diagnosticEnvironment(),
+    AYLA_DEVELOPMENT_ROOT: root,
   },
   startupTimeout: 60_000,
   restartLimit: 0,

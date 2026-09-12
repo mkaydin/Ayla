@@ -1,3 +1,5 @@
+> Historical design record. Runtime and setup instructions are superseded by [README](../README.md) and the [production readiness plan](PRODUCTION_READINESS_PLAN.md).
+
 # Mk6 Live2D Integration Plan
 
 The Mk6 model replaces the legacy DemonGirl runtime. Its licensed source files

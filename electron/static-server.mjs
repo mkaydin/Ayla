@@ -21,7 +21,7 @@ const MIME_TYPES = new Map([
 const SECURITY_HEADERS = {
   'Content-Security-Policy': [
     "default-src 'self'",
-    "script-src 'self' https://cubism.live2d.com",
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "media-src 'self' data: blob:",
@@ -118,12 +118,6 @@ export async function startStaticServer(distDirectory, { modelDirectory = null }
   const root = resolve(distDirectory);
   const modelRoot = modelDirectory ? resolve(modelDirectory) : null;
   const server = createServer((request, response) => {
-    if (request.url?.startsWith('/api/ollama/')) {
-      const upstreamPath = request.url.replace(/^\/api\/ollama/, '') || '/';
-      proxyRequest(request, response, 11434, upstreamPath);
-      return;
-    }
-
     if (request.url?.startsWith('/__ayla_model__/')) {
       if (!modelRoot) {
         response.writeHead(404, SECURITY_HEADERS);

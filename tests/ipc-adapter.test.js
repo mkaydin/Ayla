@@ -47,27 +47,6 @@ test('desktop adapter routes Electron commands without exposing preload details 
   assert.equal(calls[1].requestId, stream.requestId);
 });
 
-test('desktop adapter retains Tauri command compatibility behind the same API', async () => {
-  const calls = [];
-  const adapter = await loadAdapter('tauri', {
-    __TAURI_INTERNALS__: {
-      invoke: async (command, args) => {
-        calls.push({ command, args });
-        return 'tauri-result';
-      },
-    },
-  });
-
-  assert.equal(adapter.getDesktopRuntime(), 'tauri');
-  assert.equal(adapter.hasDesktopBackend(), true);
-  assert.equal(
-    adapter.serviceHealthUrl('ollama', 'http://localhost:11434/api/tags'),
-    'http://localhost:11434/api/tags',
-  );
-  assert.equal(await adapter.invoke('check_db_ready'), 'tauri-result');
-  assert.equal(calls[0].command, 'check_db_ready');
-});
-
 test('desktop adapter reports unavailable browser mode instead of simulating backend work', async () => {
   const adapter = await loadAdapter('browser', {});
   assert.equal(adapter.getDesktopRuntime(), 'browser');

@@ -1,3 +1,4 @@
+import { diagnosticEnvironment, backendCommandCatalog } from './diagnostic-environment.mjs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
@@ -18,11 +19,11 @@ const text = [
   `${target} is a unique temporary concept used only by the Ayla Phase 4 diagnostic.`,
 ].join('\n\n');
 const manager = new SidecarManager({
-  binaryPath: developmentSidecarPath(root),
+  binaryPath: process.env.AYLA_SIDECAR_BIN || developmentSidecarPath(root),
   cwd: root,
   env: {
-    ...process.env,
-    AYLA_DEVELOPMENT_ROOT: path.join(root, 'src-tauri'),
+    ...diagnosticEnvironment(),
+    AYLA_DEVELOPMENT_ROOT: root,
   },
   startupTimeout: 60_000,
   restartLimit: 0,

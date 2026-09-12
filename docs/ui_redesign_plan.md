@@ -1,3 +1,5 @@
+> Historical design record. Runtime and setup instructions are superseded by [README](../README.md) and the [production readiness plan](PRODUCTION_READINESS_PLAN.md).
+
 # UI Redesign — Multi-Panel Layout System
 
 ## 1. Current UI Analysis & Problems

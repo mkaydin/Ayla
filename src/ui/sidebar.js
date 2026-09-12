@@ -5,6 +5,7 @@ import { createPanel, getPanel } from './panel-system.js';
 const TOGGLE_BUTTONS = [
   { id: 'chat',   icon: '\uD83D\uDCAC', label: 'Chat',   shortcut: 'Ctrl+C' },
   { id: 'ocr',    icon: '\uD83D\uDCC4', label: 'OCR',    shortcut: 'Ctrl+O' },
+  { id: 'code',   icon: '\uD83E\uDDE9', label: 'Code',   shortcut: 'Ctrl+D' },
   { id: 'search', icon: '\uD83D\uDD0D', label: 'Search', shortcut: 'Ctrl+S' },
   { id: 'kb',     icon: '\uD83E\uDDE0', label: 'KB',     shortcut: 'Ctrl+K' },
 ];
@@ -43,6 +44,7 @@ export function initSidebar() {
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key === 'c') { e.preventDefault(); toggleSidebarPanel('chat'); }
     if (e.ctrlKey && e.key === 'o') { e.preventDefault(); toggleSidebarPanel('ocr'); }
+    if (e.ctrlKey && e.key === 'd') { e.preventDefault(); toggleSidebarPanel('code'); }
     if (e.ctrlKey && e.key === 's') { e.preventDefault(); toggleSidebarPanel('search'); }
     if (e.ctrlKey && e.key === 'k') { e.preventDefault(); toggleSidebarPanel('kb'); }
   });

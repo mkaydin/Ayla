@@ -1,6 +1,8 @@
 services:
   surrealdb:
     image: surrealdb/surrealdb:v2.1.4
+    # setup-services supplies the host owner for bind-mounted storage.
+    user: "${AYLA_STORAGE_UID:-1000}:${AYLA_STORAGE_GID:-1000}"
     container_name: ayla-surrealdb
     ports: ["127.0.0.1:8000:8000"]
     volumes: ["./data/surrealdb:/data"]
@@ -23,7 +25,9 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   qdrant:
-    # Keep this minor aligned with qdrant-client in src-tauri/Cargo.toml.
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    # Keep this minor aligned with qdrant-client in crates/ayla-core/Cargo.toml.
     image: qdrant/qdrant:v1.13.2
     container_name: ayla-qdrant
     ports:
@@ -64,7 +68,7 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   lightpanda:
-    image: lightpanda/browser:latest
+    image: lightpanda/browser@sha256:65e0cbeffe1ee00a51894ad23ac73277eeca1c4122ccbb57164f84d19ff1d5d3
     container_name: ayla-lightpanda
     ports: ["127.0.0.1:9222:9222"]
     restart: unless-stopped

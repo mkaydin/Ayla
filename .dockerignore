@@ -1,0 +1,11 @@
+.git
+.env
+.env.local
+node_modules
+target
+data
+ayla-data
+Mk6_1.0
+public/Mk6
+release
+.electron-resources

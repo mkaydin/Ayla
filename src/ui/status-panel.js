@@ -5,6 +5,7 @@ import { events } from '../lib/events.js';
 import {
   canRestartBackend,
   getBackendStatus,
+  invoke,
   listenBackendStatus,
   restartBackend,
   serviceHealthUrl,
@@ -22,7 +23,8 @@ const SERVICES = [
   { id: 'qdrant',    name: 'Qdrant',      url: serviceHealthUrl('qdrant', 'http://127.0.0.1:6333'),              parse: () => ':6334 (1024-dim)' },
   { id: 'searxng',   name: 'SearXNG',     url: serviceHealthUrl('searxng', 'http://127.0.0.1:8888/healthz'),                  parse: () => 'healthy · :8888' },
   { id: 'lightpanda',name: 'Lightpanda',  url: serviceHealthUrl('lightpanda', 'http://127.0.0.1:9222/json/version'),  parse: () => 'CDP :9222' },
-  { id: 'tts',       name: 'TTS',         url: null,                                  parse: () => 'Piper amy-low' },
+  { id: 'stt',       name: 'STT',         url: null, capability: 'stt' },
+  { id: 'tts',       name: 'TTS',         url: null, capability: 'tts' },
   { id: 'embedding', name: 'Embedding',   url: null,                                  parse: () => 'qwen3-embedding:0.6b' },
 ];
 
@@ -189,6 +191,37 @@ function buildAnimationControls() {
 
 let lastBackendState = '';
 let backendRetryButton = null;
+let ttsLanguageSelect = null;
+let systemSttButton = null;
+let systemSttSynced = false;
+
+function updateSystemSttButton() {
+  if (!systemSttButton) return;
+  const enabled = window.__app?.systemSttEnabled === true;
+  systemSttButton.textContent = enabled ? '🎧 System STT: OPEN' : '🎧 System STT: CLOSED';
+  systemSttButton.classList.toggle('active', enabled);
+  systemSttButton.setAttribute('aria-pressed', String(enabled));
+}
+
+async function syncSystemSttPreference() {
+  if (systemSttSynced) return;
+  systemSttSynced = true;
+  try {
+    const stored = localStorage.getItem('ayla_system_stt_enabled');
+    if (stored == null) {
+      const status = await invoke('get_stt_status');
+      if (window.__app) window.__app.systemSttEnabled = status?.systemEnabled === true;
+      updateSystemSttButton();
+      return;
+    }
+    await invoke('set_system_stt_enabled', {
+      enabled: window.__app?.systemSttEnabled === true,
+    });
+  } catch (error) {
+    systemSttSynced = false;
+    appendLog('error', `System STT preference: ${error?.message || error}`);
+  }
+}
 
 async function initializeBackendStatus() {
   try {
@@ -210,11 +243,7 @@ function updateBackendStatus(status, logChange) {
     ready: [
       'green',
       100,
-      status.backendVersion === 'tauri'
-        ? 'ready · Tauri'
-        : status.backendVersion
-          ? `ready · v${status.backendVersion}`
-          : 'ready',
+      status.backendVersion ? `ready · v${status.backendVersion}` : 'ready',
     ],
     starting: ['yellow', 45, 'starting…'],
     restarting: [
@@ -244,6 +273,8 @@ function updateBackendStatus(status, logChange) {
   else if (['failed', 'stopped', 'unavailable'].includes(state)) {
     reportServiceHealth('backend', false);
   }
+  if (state === 'ready') void syncSystemSttPreference();
+  else systemSttSynced = false;
   lastBackendState = state;
 }
 
@@ -266,6 +297,32 @@ function buildControls(panel) {
   const ctrls = document.getElementById('svc-controls');
   if (!ctrls) return;
 
+  systemSttButton = document.createElement('button');
+  systemSttButton.className = 'status-ctrl-btn';
+  systemSttButton.title = 'Arm future system-command listening. The manual Chat microphone remains available.';
+  updateSystemSttButton();
+  systemSttButton.addEventListener('click', async () => {
+    const enabled = window.__app?.systemSttEnabled !== true;
+    if (window.__app) window.__app.systemSttEnabled = enabled;
+    localStorage.setItem('ayla_system_stt_enabled', String(enabled));
+    updateSystemSttButton();
+    try {
+      await invoke('set_system_stt_enabled', { enabled });
+      systemSttSynced = true;
+      events.emit('status-log', {
+        type: 'info',
+        message: `System STT ${enabled ? 'opened' : 'closed'} · Chat microphone remains available`,
+      });
+    } catch (error) {
+      systemSttSynced = false;
+      events.emit('status-log', {
+        type: 'error',
+        message: `System STT preference saved; backend sync pending: ${error?.message || error}`,
+      });
+    }
+  });
+  ctrls.appendChild(systemSttButton);
+
   const ttsBtn = document.createElement('button');
   ttsBtn.className = 'status-ctrl-btn active';
   ttsBtn.textContent = '\uD83D\uDD0A TTS: ON';
@@ -278,6 +335,33 @@ function buildControls(panel) {
     events.emit('status-log', { type: 'info', message: on ? 'TTS enabled' : 'TTS muted' });
   });
   ctrls.appendChild(ttsBtn);
+
+  const languageControl = document.createElement('label');
+  languageControl.className = 'status-language-control';
+  const languageLabel = document.createElement('span');
+  languageLabel.textContent = 'TTS language';
+  ttsLanguageSelect = document.createElement('select');
+  ttsLanguageSelect.className = 'status-language-select';
+  ttsLanguageSelect.setAttribute('aria-label', 'TTS language');
+  for (const [value, label] of [['tr', 'Türkçe'], ['en', 'English']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    ttsLanguageSelect.appendChild(option);
+  }
+  ttsLanguageSelect.value = window.__app?.ttsLanguage || 'tr';
+  ttsLanguageSelect.addEventListener('change', () => {
+    const language = ttsLanguageSelect.value === 'en' ? 'en' : 'tr';
+    if (window.__app) window.__app.ttsLanguage = language;
+    localStorage.setItem('ayla_tts_language', language);
+    events.emit('tts-language-change', language);
+    events.emit('status-log', {
+      type: 'info',
+      message: `TTS language: ${language === 'en' ? 'English' : 'Türkçe'}`,
+    });
+  });
+  languageControl.append(languageLabel, ttsLanguageSelect);
+  ctrls.appendChild(languageControl);
 
   const announcementBtn = document.createElement('button');
   const updateAnnouncementButton = () => {
@@ -386,7 +470,15 @@ async function checkService(svc) {
 
   if (svc.backend) {
     try {
-      updateBackendStatus(await getBackendStatus(), false);
+      const status = await getBackendStatus();
+      updateBackendStatus(status, false);
+      if (status.backendAvailable) {
+        const capabilities = await invoke('get_runtime_capabilities');
+        if (!capabilities.storageReady) {
+          setServiceState(dot, bar, info, 'yellow', 65, 'connected · storage unavailable');
+          info.title = 'Chat and speech remain available. Knowledge approval requires persistent storage. An idle backend retries startup automatically.';
+        }
+      }
     } catch (error) {
       updateBackendStatus({ state: 'failed', error: error.message }, false);
     }
@@ -394,7 +486,40 @@ async function checkService(svc) {
   }
 
   if (!svc.url) {
-    setServiceState(dot, bar, info, 'gray', 100, svc.parse(null));
+    if (svc.capability) {
+      try {
+        const capabilities = await invoke('get_runtime_capabilities');
+        const capability = capabilities?.[svc.capability];
+        if (capability?.available) {
+          if (svc.capability === 'tts') updateTtsLanguageCapabilities(capability);
+          const sttLanguage = svc.capability === 'stt'
+            ? `${capability.languageMode || 'auto'} · ${(capability.supportedLanguages || ['tr', 'en']).join('/')}`
+            : null;
+          const label = [
+            capability.engine || capability.model,
+            capability.voice || capability.provider,
+            svc.capability === 'tts'
+              ? window.__app?.ttsLanguage || capability.language
+              : sttLanguage || capability.language,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          setServiceState(dot, bar, info, 'green', 100, label || 'available');
+          info.title = capability.modelDirectory || '';
+          reportServiceHealth(svc.id, true);
+        } else {
+          setServiceState(dot, bar, info, 'red', 20, 'unavailable');
+          info.title = capability?.reason || 'Capability unavailable';
+          reportServiceHealth(svc.id, false);
+        }
+      } catch (error) {
+        setServiceState(dot, bar, info, 'red', 20, 'unavailable');
+        info.title = error?.message || String(error);
+        reportServiceHealth(svc.id, false);
+      }
+      return;
+    }
+    setServiceState(dot, bar, info, 'gray', 100, svc.parse?.(null) || 'built in');
     return;
   }
 
@@ -415,6 +540,32 @@ async function checkService(svc) {
     setServiceState(dot, bar, info, 'red', 20, 'offline');
     reportServiceHealth(svc.id, false);
   }
+}
+
+function updateTtsLanguageCapabilities(capability) {
+  if (!ttsLanguageSelect) return;
+  const supported = Array.isArray(capability.supportedLanguages)
+    ? capability.supportedLanguages
+    : capability.language ? [capability.language] : [];
+  for (const option of ttsLanguageSelect.options) {
+    option.disabled = supported.length > 0 && !supported.includes(option.value);
+  }
+  let selected = window.__app?.ttsLanguage || 'tr';
+  if (!localStorage.getItem('ayla_tts_language') && supported.includes(capability.language)) {
+    selected = capability.language;
+    if (window.__app) window.__app.ttsLanguage = selected;
+    ttsLanguageSelect.value = selected;
+  }
+  if (supported.length > 0 && !supported.includes(selected)) {
+    const fallback = supported.includes(capability.language)
+      ? capability.language
+      : supported[0];
+    if (window.__app) window.__app.ttsLanguage = fallback;
+    ttsLanguageSelect.value = fallback;
+  }
+  ttsLanguageSelect.title = supported.length
+    ? `Available: ${supported.join(', ')}`
+    : 'No language information reported by the TTS backend';
 }
 
 function setServiceState(dot, bar, info, color, width, text) {

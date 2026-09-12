@@ -1,4 +1,3 @@
-import { invoke } from '../lib/ipc.js';
 
 export const MK6_MODEL_URL = '/__ayla_model__/Mk6.model3.json';
 export const MK6_EXPRESSION_DATA = Symbol('ayla.mk6.expressionData');
@@ -87,21 +86,6 @@ export function augmentMk6Manifest(source, manifestUrl = MK6_MODEL_URL) {
   return manifest;
 }
 
-function assetMimeType(path) {
-  if (path.endsWith('.json')) return 'application/json';
-  if (path.endsWith('.png')) return 'image/png';
-  return 'application/octet-stream';
-}
-
-function byteArray(value) {
-  if (value instanceof Uint8Array) return value;
-  if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  if (ArrayBuffer.isView(value)) {
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-  }
-  return Uint8Array.from(value || []);
-}
-
 function parseExpressionData(id, source) {
   if (!Array.isArray(source?.Parameters)) {
     throw new TypeError(`Mk6 expression '${id}' has no parameter array`);
@@ -161,56 +145,6 @@ function disableNativeExpressions(manifest) {
   return manifest;
 }
 
-async function loadMk6FromTauri(Live2DModel) {
-  const read = async path => byteArray(await invoke('read_live2d_asset', { relativePath: path }));
-  const source = JSON.parse(new TextDecoder().decode(await read('Mk6.model3.json')));
-  const manifest = augmentMk6Manifest(source, 'http://ayla.local/Mk6.model3.json');
-  const expressionData = new Map();
-  const objectUrls = [];
-  const mount = async path => {
-    const url = URL.createObjectURL(new Blob([await read(path)], { type: assetMimeType(path) }));
-    objectUrls.push(url);
-    return url;
-  };
-
-  manifest.FileReferences.Moc = await mount(source.FileReferences.Moc);
-  manifest.FileReferences.Textures = await Promise.all(
-    source.FileReferences.Textures.map(path => mount(path)),
-  );
-  for (const optional of ['Physics', 'Pose', 'UserData', 'DisplayInfo']) {
-    const path = source.FileReferences[optional];
-    if (path) manifest.FileReferences[optional] = await mount(path);
-  }
-  await Promise.all(MK6_EXPRESSIONS.map(async definition => {
-    const path = `Expressions/${definition.id}.exp3.json`;
-    const json = JSON.parse(new TextDecoder().decode(await read(path)));
-    expressionData.set(definition.id, parseExpressionData(definition.id, json));
-  }));
-  disableNativeExpressions(manifest);
-  for (const [group, definitions] of Object.entries(manifest.FileReferences.Motions)) {
-    manifest.FileReferences.Motions[group] = await Promise.all(
-      definitions.map(async definition => ({
-        ...definition,
-        File: await mount(definition.File),
-      })),
-    );
-  }
-
-  try {
-    const model = await Live2DModel.from(manifest, {
-      autoInteract: false,
-      autoUpdate: true,
-      idleMotionGroup: 'Idle',
-      motionPreload: 'ALL',
-    });
-    model.once('destroy', () => objectUrls.forEach(url => URL.revokeObjectURL(url)));
-    return attachExpressionData(model, expressionData);
-  } catch (error) {
-    objectUrls.forEach(url => URL.revokeObjectURL(url));
-    throw error;
-  }
-}
-
 export async function loadMk6Model(Live2DModel, fetchImpl = fetch) {
   try {
     const response = await fetchImpl(MK6_MODEL_URL, { cache: 'no-store' });
@@ -226,9 +160,6 @@ export async function loadMk6Model(Live2DModel, fetchImpl = fetch) {
     });
     return attachExpressionData(model, expressionData);
   } catch (networkError) {
-    if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
-      return loadMk6FromTauri(Live2DModel);
-    }
     throw new Error(
       `Mk6 model is unavailable (${networkError.message}). Install Mk6_1.0 locally or set AYLA_LIVE2D_MODEL_DIR.`,
     );

@@ -1,6 +1,6 @@
 const DEFAULT_MAX_BACKEND_PAYLOAD = 60 * 1024 * 1024;
 const REQUEST_ID_PATTERN = /^[a-f0-9-]{16,64}$/i;
-const NOTIFICATION_TARGETS = new Set(['search', 'ocr', 'kb', 'chat', 'status']);
+const NOTIFICATION_TARGETS = new Set(['search', 'ocr', 'code', 'kb', 'chat', 'status']);
 const NOTIFICATION_URGENCY = new Set(['low', 'normal', 'critical']);
 
 export function isTrustedSenderUrl(senderUrl, trustedOrigin) {
@@ -37,6 +37,12 @@ export function validateRequestId(requestId) {
 }
 
 export function normalizeDialogOptions(value) {
+  if (value?.directory === true) {
+    return {
+      properties: ['openDirectory'],
+      filters: [],
+    };
+  }
   const filters = Array.isArray(value?.filters)
     ? value.filters
       .slice(0, 10)

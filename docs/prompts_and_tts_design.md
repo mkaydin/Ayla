@@ -1,3 +1,5 @@
+> Historical design record. Runtime and setup instructions are superseded by [README](../README.md) and the [production readiness plan](PRODUCTION_READINESS_PLAN.md).
+
 # Archived Prompt Design — Former Alice Persona
 
 > **Archived:** This document records the superseded pre-Ayla prompt and early

@@ -1,5 +1,5 @@
 // ── Document Processor Panel ───────────────────────────────
-// OCR tab: deepseek-ocr for scanned PDFs (slow, thorough)
+// OCR tab: GLM OCR with PDFium layout hints for scanned and scientific PDFs.
 // Quick Extract tab: direct text read for .txt .md .json .docx .pdf (fast)
 
 import { createPanel, getPanel } from './panel-system.js';
@@ -17,6 +17,7 @@ import { escapeHtml } from '../lib/dom.js';
 
 let queueItems = [];
 let activeMethod = 'quick_extract';
+let ocrKnowledgeMode = 'semantic';
 
 const FILE_ICONS = { '.pdf': '\uD83D\uDCD5', '.txt': '\uD83D\uDCC4', '.md': '\uD83D\uDCDD', '.json': '\uD83D\uDCCB', '.docx': '\uD83D\uDCD8' };
 
@@ -50,10 +51,19 @@ function renderList(panel) {
         \uD83D\uDD6E OCR (Science PDFs)
       </button>
     </div>
+    ${activeMethod === 'ocr' ? `<label class="ocr-kb-mode">
+      <span>Knowledge output</span>
+      <select id="ocr-kb-mode-select">
+        <option value="deterministic" ${ocrKnowledgeMode === 'deterministic' ? 'selected' : ''}>Structured (deterministic)</option>
+        <option value="semantic" ${ocrKnowledgeMode === 'semantic' ? 'selected' : ''}>Structured + Ollama semantic assembly</option>
+        <option value="disabled" ${ocrKnowledgeMode === 'disabled' ? 'selected' : ''}>Evidence document only</option>
+      </select>
+      <small>Semantic mode uses the configured Ollama model. Cloud models receive bounded OCR page evidence; deterministic output is preserved if enrichment fails.</small>
+    </label>` : ''}
     <div class="ocr-upload-zone" id="ocr-upload-zone">
       <div class="ocr-upload-icon">${activeMethod === 'ocr' ? '\uD83D\uDCD5' : '\uD83D\uDCC2'}</div>
       <div class="ocr-upload-text">${activeMethod === 'ocr' ? 'Drop PDF here or click to browse' : 'Drop .txt .md .json .docx .pdf or click'}</div>
-      <div class="ocr-upload-hint">${activeMethod === 'ocr' ? 'Max 100 MB per file — uses deepseek-ocr' : 'Direct text extraction — Qdrant vector storage'}</div>
+      <div class="ocr-upload-hint">${activeMethod === 'ocr' ? 'Max 100 MB per file — local GLM OCR with PDFium layout detection' : 'Direct text extraction — Qdrant vector storage'}</div>
     </div>
     <div class="ocr-queue-section-title">History <span style="font-weight:400;color:var(--text-muted);font-size:10px">(${queueItems.length})</span></div>
     <div id="ocr-queue"></div>
@@ -64,6 +74,9 @@ function renderList(panel) {
       activeMethod = tab.dataset.method;
       renderList(panel);
     });
+  });
+  body.querySelector('#ocr-kb-mode-select')?.addEventListener('change', (event) => {
+    ocrKnowledgeMode = event.target.value;
   });
 
   setupUpload(body, panel);
@@ -151,12 +164,31 @@ function queueFile(fileInfo) {
     file: fileInfo.file || null,
     size: fileInfo.size || 0,
     method: activeMethod,
+    knowledgeMode: activeMethod === 'ocr' ? ocrKnowledgeMode : null,
     status: 'queued',
     pages: '?',
     chars: 0,
     chunks: 0,
     progress: 0,
     text: '',
+    stage: '',
+    warnings: [],
+    pageResults: [],
+    model: '',
+    assemblyModel: '',
+    performance: null,
+    markdownArtifact: null,
+    layoutArtifact: null,
+    knowledgeBaseArtifact: null,
+    structuredArtifact: null,
+    knowledgeEntityCount: 0,
+    knowledgeRelationCount: 0,
+    knowledgePreview: null,
+    structuredPreview: null,
+    previewMode: 'faithful',
+    graphApproval: null,
+    graphRemoval: null,
+    graphBusy: false,
     error: null,
     timestamp: Date.now(),
   };
@@ -183,6 +215,7 @@ async function processNextInQueue() {
     operationId: item.id,
   });
   let unlistenStarted = () => {};
+  let unlistenProgress = () => {};
 
   try {
     if (!hasDesktopBackend()) {
@@ -204,13 +237,46 @@ async function processNextInQueue() {
           item.operation?.setProcessId(item.processId);
         }
       });
-      item.operation = invokeCancelable('run_ocr', { filePath: item.path });
+      unlistenProgress = await listenEvent('ocr-progress', (event) => {
+        const update = event.payload || {};
+        if (item.processId && update.pid && update.pid !== item.processId) return;
+        const current = Number(update.current_page || 0);
+        const total = Number(update.total_pages || 0);
+        item.stage = update.message || update.stage || 'Processing';
+        if (update.stage === 'rendering') item.progress = 5;
+        else if (update.stage === 'cache' && total > 0) {
+          item.progress = Math.min(15, 5 + Math.round((current / total) * 10));
+        }
+        else if (update.stage === 'recognizing' && total > 0) {
+          item.progress = Math.min(90, 10 + Math.round((current / total) * 80));
+        } else if (update.stage === 'assembling') item.progress = 95;
+        else if (update.stage === 'semantic_assembly') item.progress = 97;
+        else if (update.stage === 'complete') item.progress = 100;
+        renderQueue();
+      });
+      item.operation = invokeCancelable('run_ocr', {
+        filePath: item.path,
+        knowledgeMode: item.knowledgeMode,
+      });
       if (item.cancelRequested) await item.operation.cancel().catch(() => false);
       const result = await item.operation.promise;
       item.text = result.text || '';
       item.chars = item.text.length;
       item.pages = result.pages || '?';
       item.processId = result.pid || null;
+      item.warnings = Array.isArray(result.warnings) ? result.warnings : [];
+      item.pageResults = Array.isArray(result.page_results) ? result.page_results : [];
+      item.model = result.models?.ocr || '';
+      item.assemblyModel = result.models?.assembly || '';
+      item.knowledgeMode = result.knowledge_mode || item.knowledgeMode;
+      item.performance = result.performance || null;
+      item.markdownArtifact = result.markdown_artifact || null;
+      item.layoutArtifact = result.layout_artifact || null;
+      item.knowledgeBaseArtifact = result.knowledge_base_artifact || null;
+      item.structuredArtifact = result.structured_artifact || null;
+      item.knowledgeEntityCount = Number(result.knowledge_entity_count || 0);
+      item.knowledgeRelationCount = Number(result.knowledge_relation_count || 0);
+      item.progress = 100;
     } else {
       item.operation = invokeCancelable('run_quick_extract', { filePath: item.path });
       if (item.cancelRequested) await item.operation.cancel().catch(() => false);
@@ -242,6 +308,7 @@ async function processNextInQueue() {
     });
   } finally {
     try { unlistenStarted(); } catch {}
+    try { unlistenProgress(); } catch {}
     delete item.operation;
     item.cancelRequested = false;
   }
@@ -264,6 +331,12 @@ function renderQueue() {
     const el = document.createElement('div');
     const icon = FILE_ICONS['.' + (item.filename.split('.').pop() || '')] || '\uD83D\uDCC4';
     const methodBadge = item.method === 'ocr' ? '\uD83D\uDD6E OCR' : '\u26A1 Quick';
+    const ocrStats = item.method === 'ocr'
+      ? ` \u00B7 ${escapeHtml(item.knowledgeMode || 'deterministic')}${item.performance?.pages_from_cache ? ` \u00B7 ${item.performance.pages_from_cache} cached` : ''}`
+      : '';
+    const modelStats = item.model
+      ? ` \u00B7 ${escapeHtml(item.model)}${item.assemblyModel ? ` + ${escapeHtml(item.assemblyModel)}` : ''}`
+      : '';
     el.className = 'ocr-queue-item ' + (item.status === 'complete' ? 'complete' : item.status === 'failed' ? 'failed' : '');
     el.innerHTML = `
       <div class="ocr-item-header">
@@ -272,10 +345,11 @@ function renderQueue() {
       </div>
       <div class="ocr-item-meta">
         <span class="ocr-method-badge">${methodBadge}</span>
-        ${item.pages !== '?' ? item.pages + ' pages \u00B7 ' : ''}${item.chars.toLocaleString()} chars${item.chunks ? ' \u00B7 ' + item.chunks + ' chunks' : ''} \u00B7 ${timeAgo(item.timestamp)}
+        ${item.pages !== '?' ? item.pages + ' pages \u00B7 ' : ''}${item.chars.toLocaleString()} chars${item.chunks ? ' \u00B7 ' + item.chunks + ' chunks' : ''}${ocrStats}${item.knowledgeEntityCount ? ' \u00B7 KB ' + item.knowledgeEntityCount + ' entities/' + item.knowledgeRelationCount + ' relations' : ''}${modelStats}${item.warnings?.length ? ' \u00B7 \u26A0 ' + item.warnings.length : ''} \u00B7 ${timeAgo(item.timestamp)}
       </div>
       ${item.status === 'processing' ? `
         <div class="ocr-item-progress"><div class="ocr-item-progress-fill" style="width:${item.progress}%"></div></div>
+        ${item.stage ? `<div class="ocr-item-meta">${escapeHtml(item.stage)}</div>` : ''}
         <div class="ocr-item-actions">
           <button class="ocr-action-btn discard" data-action="cancel" data-id="${item.id}"
             ${item.cancelRequested ? 'disabled' : ''}>
@@ -286,17 +360,17 @@ function renderQueue() {
         <div class="ocr-item-actions">
           <button class="ocr-action-btn" data-action="view" data-id="${item.id}">\uD83D\uDC41 View</button>
           <button class="ocr-action-btn approve" data-action="approve" data-id="${item.id}">\u2713 Approve</button>
-          <button class="ocr-action-btn discard" data-action="discard" data-id="${item.id}">\u2717 Discard</button>
+          <button class="ocr-action-btn discard" data-action="discard" data-id="${item.id}">\u2717 Hide</button>
         </div>` : ''}
       ${item.status === 'ingested' ? `
         <div class="ocr-item-actions">
           <button class="ocr-action-btn" data-action="view" data-id="${item.id}">\uD83D\uDCC4 View Text</button>
-          <button class="ocr-action-btn discard" data-action="discard" data-id="${item.id}">\u2717 Remove</button>
+          <button class="ocr-action-btn discard" data-action="discard" data-id="${item.id}">\u2717 Hide</button>
         </div>` : ''}
       ${item.status === 'failed' ? `
         <div class="ocr-item-actions">
           <button class="ocr-action-btn" data-action="retry" data-id="${item.id}">\u21BA Retry</button>
-          <button class="ocr-action-btn discard" data-action="discard" data-id="${item.id}">\u2717 Discard</button>
+          <button class="ocr-action-btn discard" data-action="discard" data-id="${item.id}">\u2717 Hide</button>
         </div>
         <div style="font-size:10px;color:#fca5a5;margin-top:4px">${escapeHtml(item.error || 'Unknown error')}</div>` : ''}
     `;
@@ -325,25 +399,77 @@ function renderQueue() {
   }
 }
 
-function renderPreview(item) {
+function renderPreview(item, mode = item.previewMode || 'faithful') {
   const panel = getPanel('ocr');
   if (!panel) return;
+  item.previewMode = mode;
   const body = panel.getContentEl();
+  const isOcr = item.method === 'ocr';
+  const preview = mode === 'knowledge'
+    ? item.knowledgePreview
+    : mode === 'structured'
+      ? item.structuredPreview
+      : item.text;
   body.innerHTML = `
     <button class="ocr-back-btn" id="ocr-back-btn">\u2190 Back to list</button>
-    <div class="ocr-preview" id="ocr-preview">${renderMarkdown(item.text)}</div>
+    ${isOcr ? `<div class="ocr-method-tabs ocr-preview-tabs">
+      <button class="ocr-method-tab ${mode === 'faithful' ? 'active' : ''}" data-preview="faithful">Faithful OCR</button>
+      <button class="ocr-method-tab ${mode === 'knowledge' ? 'active' : ''}" data-preview="knowledge">KB-ready document</button>
+      <button class="ocr-method-tab ${mode === 'structured' ? 'active' : ''}" data-preview="structured">Structured graph</button>
+    </div>` : ''}
+    <div class="ocr-preview" id="ocr-preview">${preview == null
+      ? '<div class="ocr-preview-loading">Loading artifact…</div>'
+      : mode === 'structured'
+        ? `<pre>${escapeHtml(preview)}</pre>`
+        : renderMarkdown(preview)}</div>
+    ${item.error ? `<div class="ocr-preview-error">${escapeHtml(item.error)}</div>` : ''}
+    ${item.warnings?.length ? `<details class="ocr-diagnostics"><summary>${item.warnings.length} OCR warning${item.warnings.length === 1 ? '' : 's'}</summary><ul>${item.warnings.map(warning => `<li>${warning.page ? `Page ${warning.page}: ` : ''}${escapeHtml(warning.message || warning.code)}</li>`).join('')}</ul></details>` : ''}
+    ${isOcr ? `<div class="ocr-kb-summary">
+      <strong>${item.knowledgeMode === 'disabled' ? 'OCR evidence document' : 'Structured OCR knowledge'}</strong>
+      <span>${item.knowledgeEntityCount} entities · ${item.knowledgeRelationCount} relations · page-cited${item.performance?.pages_from_cache ? ` · ${item.performance.pages_from_cache} pages restored from cache` : ''}</span>
+    </div>
+    <div class="ocr-graph-approval"><span>${item.status === 'ingested' ? 'Evidence, graph, and vectors approved in the knowledge base.' : 'Approve the page-cited evidence, structured graph, and search vectors together.'}</span></div>` : ''}
     <div class="ocr-preview-footer">
-      <button class="ocr-action-btn approve" id="ocr-approve-btn">\u2713 Approve &amp; Add to Knowledge Base</button>
-      <button class="ocr-action-btn discard" id="ocr-discard-btn">\u2717 Discard</button>
+      ${item.status !== 'ingested' ? `<button class="ocr-action-btn approve" id="ocr-approve-btn">\u2713 ${isOcr ? 'Approve KB-ready document' : 'Approve &amp; Add to Knowledge Base'}</button>` : '<span class="ocr-kb-ingested">Knowledge document added to Ayla.</span>'}
+      <button class="ocr-action-btn discard" id="ocr-discard-btn">\u2717 Hide from history</button>
     </div>
   `;
 
   document.getElementById('ocr-back-btn').addEventListener('click', () => renderList(panel));
-  document.getElementById('ocr-approve-btn').addEventListener('click', () => approveItem(item));
+  document.getElementById('ocr-approve-btn')?.addEventListener('click', () => approveItem(item));
   document.getElementById('ocr-discard-btn').addEventListener('click', () => discardItem(item));
+  body.querySelectorAll('[data-preview]').forEach(button => {
+    button.addEventListener('click', () => renderPreview(item, button.dataset.preview));
+  });
+
+  if (isOcr && mode === 'knowledge' && item.knowledgePreview == null) {
+    void loadOcrArtifact(item, 'knowledge');
+  } else if (isOcr && mode === 'structured' && item.structuredPreview == null) {
+    void loadOcrArtifact(item, 'structured');
+  }
+}
+
+async function loadOcrArtifact(item, mode) {
+  const artifact = mode === 'knowledge' ? item.knowledgeBaseArtifact : item.structuredArtifact;
+  if (!artifact?.id) {
+    item.error = `Missing OCR ${mode} artifact`;
+    renderPreview(item, mode);
+    return;
+  }
+  try {
+    const result = await invoke('get_artifact_content', { artifactId: artifact.id });
+    if (mode === 'knowledge') item.knowledgePreview = result.content || '';
+    else item.structuredPreview = result.content || '';
+    item.previewTruncated = Boolean(result.truncated);
+  } catch (error) {
+    if (mode === 'knowledge') item.knowledgePreview = `Could not load artifact: ${error.message || error}`;
+    else item.structuredPreview = JSON.stringify({ error: error.message || String(error) }, null, 2);
+  }
+  if (item.previewMode === mode) renderPreview(item, mode);
 }
 
 async function approveItem(item) {
+  if (item.status === 'processing' || item.status === 'ingested') return;
   const label = item.method === 'ocr' ? 'ocr' : 'quick_extract';
   const announcementData = {
     kind: 'document',
@@ -366,10 +492,6 @@ async function approveItem(item) {
   }
 
   try {
-      item.progress = 10; renderQueue();
-      events.emit('status-log', { type: 'info', message: 'Saving file record...' });
-      await invoke('save_file_record', { name: item.filename, path: item.path, chars: item.chars, sourceType: label, text: item.text });
-
       const unlisten = await listenEvent('ingest-progress', (event) => {
         item.progress = Math.max(item.progress || 20, event.payload.pct ?? 20);
         const step = event.payload.step || 'processing';
@@ -378,18 +500,26 @@ async function approveItem(item) {
       });
 
       try {
-        item.progress = 20; renderQueue();
-        item.operation = invokeCancelable('ingest_text', {
-          text: item.text,
-          source: item.filename,
-          sourceType: label,
-        });
+        item.progress = 10; renderQueue();
+        if (item.method === 'ocr') {
+          events.emit('status-log', { type: 'info', message: 'Ingesting the KB-ready OCR artifact...' });
+          item.operation = invokeCancelable('ingest_ocr_knowledge', {
+            operationId: item.processId,
+          });
+          item.operation.setProcessId(item.processId);
+        } else {
+          events.emit('status-log', { type: 'info', message: 'Saving file record...' });
+          item.operation = invokeCancelable('commit_document', {
+            name: item.filename, path: item.path, chars: item.chars,
+            sourceType: label, text: item.text,
+          });
+        }
         if (item.cancelRequested) await item.operation.cancel().catch(() => false);
         const result = await item.operation.promise;
 
         item.progress = 100; renderQueue();
         notifyProcess('complete', 'kb-ingest', announcementData);
-        events.emit('status-log', { type: 'success', message: 'KB: ' + result });
+        events.emit('status-log', { type: 'success', message: 'KB: ' + (result.message || result) });
         events.emit('kb-refresh');
       } finally {
         delete item.operation;

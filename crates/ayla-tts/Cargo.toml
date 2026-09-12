@@ -1,0 +1,12 @@
+[package]
+name = "ayla-tts"
+version = "0.1.0"
+description = "Host-neutral offline speech synthesis engines for Ayla"
+edition = "2021"
+rust-version = "1.88.0"
+
+[dependencies]
+serde_json = "1.0"
+sherpa-onnx = { path = "../../vendor/sherpa-onnx/sherpa-onnx" }
+unicode-normalization = "0.1"
+

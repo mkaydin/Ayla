@@ -1,8 +1,8 @@
 // ── Ayla — Main Bootstrap ──────────────────────────────────
 
-import { Application, ShaderSystem, Ticker } from 'pixi.js';
+import { Application, Container, ShaderSystem, Ticker } from 'pixi.js';
+import { createAvatarFreeScene } from './live2d/avatar-free.js';
 import { install as installCspSafeShaders } from '@pixi/unsafe-eval';
-import { Live2DModel } from 'pixi-live2d-display/cubism4';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 import { TtsPlayer } from './tts-player.js';
@@ -40,11 +40,14 @@ import {
 // Replace Pixi's `new Function` shader uniform generator with its CSP-safe
 // implementation. This keeps Electron's production policy free of unsafe-eval.
 installCspSafeShaders({ ShaderSystem });
-Live2DModel.registerTicker(Ticker);
 
 function storedToggle(key, fallback = true) {
   const value = localStorage.getItem(key);
   return value == null ? fallback : value !== 'false';
+}
+
+function normalizeTtsLanguage(value) {
+  return String(value || '').toLowerCase() === 'en' ? 'en' : 'tr';
 }
 
 // ── Global state ───────────────────────────────────────────
@@ -52,6 +55,8 @@ const state = {
   autoBlink: true,
   mouseLook: true,
   ttsEnabled: true,
+  ttsLanguage: normalizeTtsLanguage(localStorage.getItem('ayla_tts_language')),
+  systemSttEnabled: storedToggle('ayla_system_stt_enabled', false),
   processAnnouncementsEnabled: storedToggle('ayla_process_announcements'),
   desktopNotificationsEnabled: storedToggle('ayla_desktop_notifications'),
   nextBlinkAt: performance.now() + 2000 + Math.random() * 3000,
@@ -67,7 +72,9 @@ const state = {
 window.__app = state;
 
 // ── Boot Pixi ──────────────────────────────────────────────
-const app = new Application({
+let app;
+try {
+app = new Application({
   view: document.getElementById('canvas'),
   width: window.innerWidth,
   height: window.innerHeight,
@@ -91,6 +98,19 @@ const app = new Application({
   powerPreference: 'high-performance',
   preserveDrawingBuffer: false,
 });
+} catch (error) {
+  // Panels and speech do not require a GPU or an avatar renderer.
+  const ticker = new Ticker();
+  app = {
+    stage: new Container(), ticker,
+    renderer: { type: 0, resolution: 1, width: window.innerWidth, height: window.innerHeight,
+      resize(width, height) { this.width = width; this.height = height; } },
+    start() { ticker.start(); }, stop() { ticker.stop(); },
+  };
+  app.start();
+  state.rendererUnavailable = true;
+  console.warn('Avatar renderer unavailable; panels remain usable.', error);
+}
 app.ticker.maxFPS = 60;
 app.ticker.minFPS = 20;
 Ticker.shared.maxFPS = 60;
@@ -183,13 +203,23 @@ async function main() {
     appendLog('info', `Desktop runtime: ${runtimeInfo.runtime}`);
   }
 
-  await waitForCubismCore();
-  appendLog('info', 'Cubism Core loaded');
-
-  const model = await loadMk6Model(Live2DModel);
+  let model;
+  try {
+    if (state.rendererUnavailable) throw new Error('WebGL is unavailable');
+    if (!window.Live2DCubismCore) throw new Error('Optional Cubism runtime is not installed');
+    await waitForCubismCore();
+    const { Live2DModel } = await import('pixi-live2d-display/cubism4');
+    Live2DModel.registerTicker(Ticker);
+    model = await loadMk6Model(Live2DModel);
+    state.avatarAvailable = true;
+  } catch (error) {
+    model = createAvatarFreeScene();
+    state.avatarAvailable = false;
+    appendLog('info', `Avatar-free mode: ${error.message}. Chat, speech, and tools remain available.`);
+  }
   app.stage.addChild(model);
   window.__model = model;
-  appendLog('success', 'Mk6 model, physics, expressions, and motions loaded');
+  if (state.avatarAvailable) appendLog('success', 'Mk6 model, physics, expressions, and motions loaded');
 
   // Center & fit
   model.scale.set(1);
@@ -343,6 +373,7 @@ async function main() {
   const ttsPending = [];
   let ttsBusy = false;
   let ttsSequence = 0;
+  let ttsGenerationEpoch = 0;
   let activeTtsDedupeKey = '';
 
   const ttsProcess = async () => {
@@ -352,16 +383,22 @@ async function main() {
     while (ttsPending.length > 0) {
       const request = ttsPending.shift();
       const text = request.text;
+      const requestEpoch = ttsGenerationEpoch;
       activeTtsDedupeKey = request.dedupeKey;
       try {
         if (hasDesktopBackend()) {
           if (motionController.current() === 'sleep') motionController.stop();
           appendLog('info', 'TTS: ' + text.slice(0, 60) + '...');
-          const wav = await invoke('generate_tts', { text });
-          if (wav) ttsPlayer.enqueue(wav instanceof Uint8Array ? wav : new Uint8Array(wav));
+          const wav = await invoke('generate_tts', {
+            text,
+            language: request.language || state.ttsLanguage,
+          });
+          if (wav && requestEpoch === ttsGenerationEpoch && state.ttsEnabled) {
+            ttsPlayer.enqueue(wav instanceof Uint8Array ? wav : new Uint8Array(wav));
+          }
         }
       } catch (e) {
-        console.warn('TTS fail:', e.message || e);
+        if (requestEpoch === ttsGenerationEpoch) console.warn('TTS fail:', e.message || e);
       }
       await new Promise((r) => setTimeout(r, 30));
       activeTtsDedupeKey = '';
@@ -382,6 +419,7 @@ async function main() {
     )) return;
     ttsPending.push({
       text: t,
+      language: normalizeTtsLanguage(request.language || state.ttsLanguage),
       priority: Number.isFinite(request.priority) ? request.priority : 20,
       dedupeKey,
       sequence: ttsSequence++,
@@ -391,6 +429,13 @@ async function main() {
   });
   events.on('tts-enabled-change', (enabled) => {
     if (enabled) return;
+    ttsGenerationEpoch++;
+    ttsPending.length = 0;
+    ttsPlayer.stop();
+    if (hasDesktopBackend()) invoke('stop_tts').catch(() => {});
+  });
+  events.on('stt-starting', () => {
+    ttsGenerationEpoch++;
     ttsPending.length = 0;
     ttsPlayer.stop();
     if (hasDesktopBackend()) invoke('stop_tts').catch(() => {});
@@ -428,11 +473,13 @@ async function main() {
   const [
     { initChatPanel },
     { initOcrPanel },
+    { initCodeAnalysisPanel },
     { initSearchPanel },
     { initKbPanel },
   ] = await Promise.all([
     import('./ui/chat-panel.js'),
     import('./ui/ocr-panel.js'),
+    import('./ui/code-analysis-panel.js'),
     import('./ui/search-panel.js'),
     import('./ui/kb-panel.js'),
   ]);
@@ -440,8 +487,10 @@ async function main() {
   // Init panels
   initChatPanel(applyExpression);
   initOcrPanel();
+  initCodeAnalysisPanel();
   initSearchPanel();
   initKbPanel();
+  if (hasDesktopBackend()) await listenEvent('knowledge-changed', () => events.emit('kb-refresh'));
   updateSidebarState();
   restoreAllPanelStates();
   await listenEvent('notification-clicked', event => {
@@ -459,7 +508,7 @@ async function main() {
   appendLog('success', 'Ready. Type to talk.');
 
   // Log renderer info
-  const renderType = app.renderer.type === 2 ? 'WebGL2' : app.renderer.type === 1 ? 'WebGL1' : 'Canvas2D';
+  const renderType = app.renderer.type === 2 ? 'WebGL2' : app.renderer.type === 1 ? 'WebGL1' : 'Panels only';
   appendLog(
     'info',
     `Renderer: ${renderType} · ${state.renderQuality} · ${app.renderer.resolution}x (${app.renderer.width}x${app.renderer.height})`,

@@ -16,43 +16,64 @@
     "test": "node --test tests/*.test.js",
     "check": "npm run test && npm run build",
     "preview": "vite preview",
-    "tauri": "npx tauri",
     "electron:dev": "npm run sidecar:build && node electron/dev.mjs",
     "electron:start": "npm run sidecar:build && electron electron/main.mjs",
     "electron:stage": "npm run build && npm run sidecar:build:release && node electron/stage-resources.mjs",
     "electron:pack": "npm run electron:stage && electron-builder --config electron-builder.yml --dir && npm run electron:inspect",
     "electron:build": "npm run electron:stage && electron-builder --config electron-builder.yml && npm run electron:inspect",
     "electron:inspect": "node electron/inspect-package.mjs",
-    "sidecar:build": "cargo build --manifest-path crates/ayla-sidecar/Cargo.toml",
-    "sidecar:build:release": "cargo build --release --manifest-path crates/ayla-sidecar/Cargo.toml",
+    "sidecar:build": "npm run native:setup && cargo build --locked --manifest-path crates/ayla-sidecar/Cargo.toml",
+    "sidecar:build:release": "npm run native:setup && cargo build --locked --release --manifest-path crates/ayla-sidecar/Cargo.toml",
     "sidecar:diagnostic": "node electron/sidecar-diagnostic.mjs",
     "sidecar:diagnostic:live": "node electron/sidecar-live-diagnostic.mjs",
     "sidecar:diagnostic:mutations": "node electron/sidecar-mutation-diagnostic.mjs",
     "sidecar:diagnostic:features": "node electron/sidecar-feature-diagnostic.mjs",
-    "sidecar:diagnostic:ocr": "node electron/sidecar-ocr-diagnostic.mjs"
+    "sidecar:diagnostic:ocr": "node electron/sidecar-ocr-diagnostic.mjs",
+    "sidecar:diagnostic:code": "node electron/sidecar-code-analysis-diagnostic.mjs",
+    "sidecar:diagnostic:code:live": "node electron/sidecar-code-analysis-live-diagnostic.mjs",
+    "sidecar:diagnostic:stt": "node electron/sidecar-stt-diagnostic.mjs",
+    "native:setup": "node scripts/bootstrap-native.mjs && node scripts/bootstrap-speech.mjs",
+    "models:setup": "node scripts/setup-models.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "services:setup": "node scripts/setup-services.mjs",
+    "release:linux": "bash scripts/build-portable-linux.sh",
+    "sidecar:diagnostic:documents": "node electron/sidecar-document-diagnostic.mjs",
+    "sidecar:diagnostic:backup": "node electron/sidecar-backup-diagnostic.mjs",
+    "installer:diagnostic": "node electron/sidecar-source-installer-diagnostic.mjs",
+    "sidecar:diagnostic:research": "node electron/sidecar-research-diagnostic.mjs",
+    "sidecar:diagnostic:soak": "node electron/sidecar-soak-diagnostic.mjs",
+    "release:arch": "bash scripts/build-arch-linux.sh"
   },
   "dependencies": {
+    "@msgpack/msgpack": "^3.1.3"
+  },
+  "devDependencies": {
+    "electron": "41.10.7",
+    "electron-builder": "^26.15.3",
+    "vite": "^7.3.0",
+    "@electron/asar": "3.4.1",
     "@pixi/unsafe-eval": "^6.5.10",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/cli": "^2.11.4",
-    "@tauri-apps/plugin-dialog": "^2.7.2",
-    "@tauri-apps/plugin-shell": "^2.3.5",
-    "dompurify": "^3.2.0",
+    "dompurify": "^3.4.16",
     "highlight.js": "^11.11.1",
-    "katex": "^0.18.1",
+    "katex": "^0.18.2",
     "marked": "^18.0.6",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^6.5.10"
   },
-  "devDependencies": {
-    "@msgpack/msgpack": "^3.1.3",
-    "electron": "41.6.1",
-    "electron-builder": "^26.15.3",
-    "vite": "^5.4.10"
-  },
   "allowScripts": {
-    "electron@41.6.1": true,
-    "electron-winstaller@5.4.0": true,
-    "esbuild@0.21.5": true
+    "electron@41.10.7": true
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mkaydin/Ayla.git"
+  },
+  "overrides": {
+    "pixi-live2d-display": {
+      "gh-pages": "^6.3.0"
+    },
+    "brace-expansion@^1.1.7": "1.1.21"
   }
 }

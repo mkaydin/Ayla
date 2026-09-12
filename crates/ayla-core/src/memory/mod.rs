@@ -18,6 +18,7 @@ pub fn safe_truncate(s: &str, max_bytes: usize) -> &str {
 pub mod config {
     pub use crate::config::*;
 }
+pub mod code_analysis_store;
 pub mod consolidator;
 pub mod context;
 pub mod conversation;
@@ -27,6 +28,8 @@ pub mod episodic;
 pub mod extraction;
 pub mod graph;
 pub mod graph_cleanup;
+pub mod graph_types;
+pub mod graph_v2;
 pub mod ingestion;
 pub mod pipeline;
 pub mod retrieval;
@@ -36,6 +39,7 @@ pub mod working;
 
 use crate::tools::types::ToolDispatch;
 use crate::tools::ToolRegistry;
+use code_analysis_store::CodeAnalysisVectorStore;
 use config::MemoryConfig;
 use consolidator::{ConsolidationReport, Consolidator};
 use context::ContextBuilder;
@@ -45,6 +49,7 @@ use embeddings::Embedder;
 use episodic::EpisodeStore;
 use extraction::Extractor;
 use graph::KnowledgeGraph;
+use graph_v2::GraphV2Store;
 use ingestion::IngestionPipeline;
 use pipeline::MemoryPipeline;
 use retrieval::HybridRetrieval;
@@ -59,8 +64,10 @@ pub struct MemoryManager {
     pub config: MemoryConfig,
     pub tool_registry: ToolRegistry,
     pub graph: Arc<Mutex<KnowledgeGraph>>,
+    pub graph_v2: Option<Arc<Mutex<GraphV2Store>>>,
     text_store: Arc<Mutex<HashMap<String, String>>>,
     pub document_store: Option<Arc<DocumentStore>>,
+    pub code_analysis_vectors: Option<Arc<CodeAnalysisVectorStore>>,
     db_ready: bool,
     pipeline: Option<Arc<Mutex<MemoryPipeline>>>,
     ingestion: Option<Arc<Mutex<IngestionPipeline>>>,
@@ -70,6 +77,25 @@ pub struct MemoryManager {
 
 impl MemoryManager {
     pub async fn new(config: MemoryConfig) -> Self {
+        // The protocol handshake has a 30-second deadline. A slow or hung
+        // storage endpoint must still leave local speech and diagnostics usable.
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            Self::initialize_persistence(config.clone()),
+        )
+        .await
+        {
+            Ok(manager) => manager,
+            Err(_) => {
+                log::warn!(
+                    "Storage initialization exceeded 20 seconds; starting with storage unavailable"
+                );
+                Self::offline(config)
+            }
+        }
+    }
+
+    async fn initialize_persistence(config: MemoryConfig) -> Self {
         let tool_registry = ToolRegistry::new();
         let text_store = Arc::new(Mutex::new(HashMap::new()));
 
@@ -98,9 +124,23 @@ impl MemoryManager {
         }
 
         match stores {
-            Some((graph, pipeline, ingestion, mut retrieval, consolidator)) => {
+            Some((
+                graph,
+                graph_v2,
+                pipeline,
+                ingestion,
+                mut retrieval,
+                consolidator,
+                code_analysis_vectors,
+            )) => {
                 log::info!("Memory system initialized with persistent storage");
-                let document_store = Self::init_document_store(&config).await.ok();
+                let document_store = match Self::init_document_store(&config).await {
+                    Ok(store) => Some(store),
+                    Err(error) => {
+                        log::error!("Document retrieval storage initialization failed: {error}");
+                        return Self::offline_with(config, tool_registry, text_store);
+                    }
+                };
                 if let Some(ref ds) = document_store {
                     retrieval = retrieval.with_document_store(ds.clone());
                 }
@@ -108,8 +148,10 @@ impl MemoryManager {
                     config,
                     tool_registry,
                     graph,
+                    graph_v2: Some(graph_v2),
                     text_store,
                     document_store,
+                    code_analysis_vectors: Some(code_analysis_vectors),
                     db_ready: true,
                     pipeline: Some(pipeline),
                     ingestion: Some(ingestion),
@@ -148,8 +190,10 @@ impl MemoryManager {
             config,
             tool_registry,
             graph: Arc::new(Mutex::new(KnowledgeGraph::new())),
+            graph_v2: None,
             text_store,
             document_store: None,
+            code_analysis_vectors: None,
             db_ready: false,
             pipeline: None,
             ingestion: None,
@@ -179,7 +223,20 @@ impl MemoryManager {
 
     pub async fn store_document_text(&self, name: String, text: String) -> usize {
         let mut store = self.text_store.lock().await;
-        store.insert(name, text);
+        const TEXT_CACHE_BUDGET: usize = 128 * 1024 * 1024;
+        store.remove(&name);
+        let mut retained = store.values().map(String::len).sum::<usize>();
+        while retained.saturating_add(text.len()) > TEXT_CACHE_BUDGET {
+            let Some(oldest) = store.keys().next().cloned() else {
+                break;
+            };
+            if let Some(removed) = store.remove(&oldest) {
+                retained = retained.saturating_sub(removed.len());
+            }
+        }
+        if text.len() <= TEXT_CACHE_BUDGET {
+            store.insert(name, text);
+        }
         store.len()
     }
 
@@ -193,10 +250,12 @@ impl MemoryManager {
     ) -> Result<
         (
             Arc<Mutex<KnowledgeGraph>>,
+            Arc<Mutex<GraphV2Store>>,
             Arc<Mutex<MemoryPipeline>>,
             Arc<Mutex<IngestionPipeline>>,
             HybridRetrieval,
             Arc<Mutex<Consolidator>>,
+            Arc<CodeAnalysisVectorStore>,
         ),
         String,
     > {
@@ -213,25 +272,50 @@ impl MemoryManager {
         .await
         .map_err(|e| format!("SurrealDB: {}", e))?;
         let surreal = Arc::new(surreal);
+        embeddings::ensure_embedding_profile(&surreal, config).await?;
+        let graph_v2 = Arc::new(Mutex::new(GraphV2Store::new(surreal.clone())));
+        graph_v2.lock().await.initialize().await?;
 
-        let qdrant = QdrantDB::connect(&config.qdrant_url)
-            .await
-            .map_err(|e| format!("Qdrant: {}", e))?;
+        let qdrant =
+            QdrantDB::connect_with_prefix(&config.qdrant_url, &config.qdrant_collection_prefix)
+                .await
+                .map_err(|e| format!("Qdrant: {}", e))?;
         let qdrant = Arc::new(qdrant);
+        let code_analysis_vectors = Arc::new(CodeAnalysisVectorStore::new(
+            qdrant.clone(),
+            Embedder::new(config.clone()),
+            config.embed_dim as u64,
+        ));
+        code_analysis_vectors.init().await?;
 
         // Load persisted graph
         let mut graph = KnowledgeGraph::with_db(surreal.clone());
         graph.load().await?;
-
-        // Load persisted text store
+        // Interrupted approvals retain their inputs for explicit retry and never enter retrieval.
+        surreal.ensure_table("knowledge_operation").await?;
+        surreal.ensure_table("kb_file").await?;
+        surreal.query("UPDATE knowledge_operation SET status = 'failed' WHERE status = 'approving' RETURN NONE;").await?;
+        let mut blocked = std::collections::HashSet::new();
+        for query in [
+            "SELECT name FROM knowledge_operation WHERE status != 'committed';",
+            "SELECT name FROM kb_file WHERE status IN ['failed', 'deleting'];",
+        ] {
+            for row in surreal.query(query).await? {
+                if let Some(name) = row.get("name").and_then(serde_json::Value::as_str) {
+                    blocked.insert(name.to_string());
+                }
+            }
+        }
         surreal.ensure_table("text_store").await?;
-        if let Ok(rows) = surreal.query("SELECT * FROM text_store;").await {
+        if let Ok(rows) = surreal.query("SELECT * FROM text_store LIMIT 4;").await {
             for row in rows {
                 if let (Some(k), Some(v)) = (
                     row.get("key").and_then(|v| v.as_str()),
                     row.get("value").and_then(|v| v.as_str()),
                 ) {
-                    text_store.lock().await.insert(k.to_string(), v.to_string());
+                    if !blocked.contains(k) {
+                        text_store.lock().await.insert(k.to_string(), v.to_string());
+                    }
                 }
             }
             log::info!(
@@ -278,14 +362,7 @@ impl MemoryManager {
         let pipeline = Arc::new(Mutex::new(pipeline));
 
         // Ingestion uses the SHARED persisted graph
-        let ingestion = IngestionPipeline::new(
-            ConversationStore::new(surreal.clone()),
-            episode,
-            semantic_store.clone(),
-            shared_graph.clone(),
-            extractor.clone(),
-            summarizer.clone(),
-        );
+        let ingestion = IngestionPipeline::new(shared_graph.clone(), extractor.clone());
         let ingestion = Arc::new(Mutex::new(ingestion));
 
         // Retrieval uses the SHARED persisted graph (was: KnowledgeGraph::new() → empty
@@ -300,7 +377,8 @@ impl MemoryManager {
                 config.embed_dim as u64,
             ),
             config.clone(),
-        );
+        )
+        .with_structured_knowledge(graph_v2.clone(), code_analysis_vectors.clone());
 
         let consolidator = Arc::new(Mutex::new(Consolidator::new(
             surreal.clone(),
@@ -308,15 +386,35 @@ impl MemoryManager {
             shared_graph.clone(),
         )));
 
-        Ok((shared_graph, pipeline, ingestion, retrieval, consolidator))
+        Ok((
+            shared_graph,
+            graph_v2,
+            pipeline,
+            ingestion,
+            retrieval,
+            consolidator,
+            code_analysis_vectors,
+        ))
     }
 
     async fn init_document_store(config: &MemoryConfig) -> Result<Arc<DocumentStore>, String> {
         use crate::db::qdrant::QdrantDB;
-        let qdrant = QdrantDB::connect(&config.qdrant_url).await?;
+        let qdrant =
+            QdrantDB::connect_with_prefix(&config.qdrant_url, &config.qdrant_collection_prefix)
+                .await?;
         let qdrant = Arc::new(qdrant);
         let embedder = Embedder::new(config.clone());
-        let store = DocumentStore::new(qdrant, embedder, config.embed_dim as u64);
+        let db = crate::db::surreal::SurrealDB::connect(
+            &config.surrealdb_url,
+            &config.surrealdb_ns,
+            &config.surrealdb_db,
+            &config.surrealdb_user,
+            &config.surrealdb_pass,
+        )
+        .await?;
+        db.ensure_table("knowledge_operation").await?;
+        let store = DocumentStore::new(qdrant, embedder, config.embed_dim as u64)
+            .with_database(Arc::new(db));
         store.init().await?;
         log::info!("Document store initialized (Qdrant 'documents' collection, 1024-dim)");
         Ok(Arc::new(store))
@@ -352,7 +450,28 @@ impl MemoryManager {
     pub async fn enrich_context(&self, query: &str, base_prompt: &str) -> Result<String, String> {
         let mut context_parts: Vec<String> = vec![];
 
-        // Search in-memory text store (works even when DB is offline)
+        let mut blocked = std::collections::HashSet::new();
+        if self.is_db_ready() {
+            let db = crate::db::surreal::SurrealDB::connect(
+                &self.config.surrealdb_url,
+                &self.config.surrealdb_ns,
+                &self.config.surrealdb_db,
+                &self.config.surrealdb_user,
+                &self.config.surrealdb_pass,
+            )
+            .await?;
+            for sql in [
+                "SELECT name FROM knowledge_operation WHERE status != 'committed';",
+                "SELECT name FROM kb_file WHERE status IN ['failed', 'deleting'];",
+            ] {
+                for row in db.query(sql).await? {
+                    if let Some(name) = row.get("name").and_then(serde_json::Value::as_str) {
+                        blocked.insert(name.to_string());
+                    }
+                }
+            }
+        }
+        // Text fallback observes the same durable approval/tombstone boundary as vector retrieval.
         {
             let store = self.text_store.lock().await;
             if !store.is_empty() {
@@ -360,7 +479,10 @@ impl MemoryManager {
                 let words: Vec<&str> = query_lower.split_whitespace().collect();
                 let mut matches: Vec<(&String, &String)> = store
                     .iter()
-                    .filter(|(_, text)| {
+                    .filter(|(name, text)| {
+                        if blocked.contains(name.as_str()) {
+                            return false;
+                        }
                         let tl = text.to_lowercase();
                         words.iter().any(|w| tl.contains(w))
                     })
@@ -482,34 +604,5 @@ impl MemoryManager {
             }
             None => Err(Self::db_err()),
         }
-    }
-}
-
-pub async fn save_text_store(manager: &MemoryManager) {
-    let store = manager.text_store.lock().await;
-    if store.is_empty() || !manager.db_ready {
-        return;
-    }
-    use crate::db::surreal::SurrealDB;
-    if let Ok(db) = SurrealDB::connect(
-        &manager.config.surrealdb_url,
-        &manager.config.surrealdb_ns,
-        &manager.config.surrealdb_db,
-        &manager.config.surrealdb_user,
-        &manager.config.surrealdb_pass,
-    )
-    .await
-    {
-        let _ = db.ensure_table("text_store").await;
-        let _ = db.query("DELETE text_store;").await;
-        for (key, value) in store.iter() {
-            let _ = db
-                .insert(
-                    "text_store",
-                    serde_json::json!({"key": key, "value": value}),
-                )
-                .await;
-        }
-        log::info!("Text store saved: {} docs", store.len());
     }
 }

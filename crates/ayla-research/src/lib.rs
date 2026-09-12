@@ -1,8 +1,10 @@
 pub mod ai;
 pub mod downloader;
 pub mod extractor;
+pub mod job;
 pub mod models;
 pub mod orchestrator;
+pub mod public_fetch;
 pub mod renderer;
 pub mod searcher;
 pub mod synthesizer;

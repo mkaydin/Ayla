@@ -1,0 +1,17 @@
+# Isolated integration services. Never mounts the user's ./data directory.
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v2.1.4
+    ports: ["127.0.0.1:18000:8000"]
+    command: ["start", "--user", "ayla_test", "--pass", "isolated_test_only", "memory"]
+    healthcheck:
+      test: ["CMD", "/surreal", "isready", "--endpoint", "http://127.0.0.1:8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  qdrant:
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    image: qdrant/qdrant:v1.13.2
+    ports: ["127.0.0.1:16333:6333", "127.0.0.1:16334:6334"]
+    tmpfs: ["/qdrant/storage"]

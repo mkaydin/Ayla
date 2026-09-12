@@ -5,6 +5,7 @@
 use super::types::*;
 use super::IngestTool;
 use std::path::{Path, PathBuf};
+const MAX_EXTRACT_TEXT_BYTES: usize = 32 * 1024 * 1024;
 
 pub struct QuickExtractTool;
 
@@ -63,7 +64,19 @@ pub fn read_file_content(path: &str) -> Result<String, String> {
         .unwrap_or("")
         .to_lowercase();
 
-    match ext.as_str() {
+    let maximum_input = if ext == "pdf" {
+        100 * 1024 * 1024
+    } else {
+        MAX_EXTRACT_TEXT_BYTES
+    };
+    if std::fs::metadata(&path)
+        .map_err(|error| error.to_string())?
+        .len()
+        > maximum_input as u64
+    {
+        return Err("Source file exceeds the extraction byte limit".into());
+    }
+    let result = match ext.as_str() {
         "txt" | "md" | "markdown" | "rs" | "js" | "py" | "toml" | "yaml" | "yml" | "html"
         | "css" | "xml" | "csv" | "log" => {
             std::fs::read_to_string(&path).map_err(|e| format!("Read error: {}", e))
@@ -87,27 +100,38 @@ pub fn read_file_content(path: &str) -> Result<String, String> {
             std::fs::read_to_string(&path)
                 .map_err(|e| format!("Unsupported format (tried text read): {}", e))
         }
+    }?;
+    if result.len() > MAX_EXTRACT_TEXT_BYTES {
+        return Err("Extracted text exceeds the 32 MiB limit".into());
     }
+    Ok(result)
 }
 
 fn extract_docx(path: &str) -> Result<String, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("Cannot open docx: {}", e))?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|e| format!("Invalid docx (zip): {}", e))?;
-    let mut doc = archive
+    let doc = archive
         .by_name("word/document.xml")
         .map_err(|_| "docx: missing word/document.xml".to_string())?;
+    if doc.size() > MAX_EXTRACT_TEXT_BYTES as u64 {
+        return Err("DOCX document XML exceeds the 32 MiB limit".into());
+    }
 
     use quick_xml::events::Event;
     use quick_xml::Reader;
     use std::io::Read;
 
     let mut xml = String::new();
-    doc.read_to_string(&mut xml)
+    doc.take(MAX_EXTRACT_TEXT_BYTES as u64 + 1)
+        .read_to_string(&mut xml)
         .map_err(|e| format!("docx read: {}", e))?;
+    if xml.len() > MAX_EXTRACT_TEXT_BYTES {
+        return Err("DOCX document XML exceeds the 32 MiB limit".into());
+    }
 
     let mut reader = Reader::from_str(&xml);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
     let mut text = String::new();
     let mut in_text = false;
     let mut buf = Vec::new();
@@ -118,7 +142,27 @@ fn extract_docx(path: &str) -> Result<String, String> {
             Ok(Event::End(ref e)) if e.name().as_ref() == b"w:t" => in_text = false,
             Ok(Event::End(ref e)) if e.name().as_ref() == b"w:p" => text.push('\n'),
             Ok(Event::Text(ref e)) if in_text => {
-                text.push_str(&e.unescape().unwrap_or_default());
+                text.push_str(&e.xml10_content().map_err(|error| error.to_string())?);
+            }
+            Ok(Event::CData(ref e)) if in_text => {
+                text.push_str(&e.decode().map_err(|error| error.to_string())?)
+            }
+            Ok(Event::GeneralRef(ref e)) if in_text => {
+                if let Some(character) = e.resolve_char_ref().map_err(|error| error.to_string())? {
+                    if character.is_control() && !matches!(character, '\n' | '\r' | '\t') {
+                        return Err("Illegal XML character reference".into());
+                    }
+                    text.push(character);
+                } else {
+                    let entity = e.decode().map_err(|error| error.to_string())?;
+                    text.push_str(
+                        quick_xml::escape::resolve_xml_entity(&entity)
+                            .ok_or("Unsupported XML entity")?,
+                    );
+                }
+            }
+            Ok(Event::DocType(_)) => {
+                return Err("DOCX document types/entities are unsupported".into())
             }
             Ok(Event::Eof) => break,
             Err(e) => return Err(format!("XML parse: {}", e)),
@@ -236,7 +280,79 @@ impl IngestTool for QuickExtractTool {
 
 #[cfg(test)]
 mod tests {
-    use super::chunk_text;
+    use super::{chunk_text, extract_docx, read_file_content, MAX_EXTRACT_TEXT_BYTES};
+    use std::io::Write;
+
+    #[test]
+    fn born_digital_pdf_preserves_numbers_and_units() {
+        let content = "BT /F1 14 Tf 72 720 Td (Measured pressure: 42.75 MPa.) Tj ET";
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_string(),
+            format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        ];
+        let mut pdf = "%PDF-1.4\n".to_string();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
+        }
+        let xref = pdf.len();
+        pdf.push_str("xref\n0 6\n0000000000 65535 f \n");
+        for offset in offsets {
+            pdf.push_str(&format!("{offset:010} 00000 n \n"));
+        }
+        pdf.push_str(&format!(
+            "trailer\n<< /Root 1 0 R /Size 6 >>\nstartxref\n{xref}\n%%EOF\n"
+        ));
+        let path = std::env::temp_dir().join(format!("ayla-pdf-text-{}.pdf", uuid::Uuid::new_v4()));
+        std::fs::write(&path, pdf).unwrap();
+        let text = read_file_content(path.to_str().unwrap());
+        std::fs::remove_file(path).unwrap();
+        let text = text.unwrap();
+        assert!(text.contains("42.75") && text.contains("MPa"));
+    }
+
+    #[test]
+    fn docx_entities_preserve_spacing_and_unicode() {
+        let path = std::env::temp_dir().join(format!("ayla-docx-{}.docx", uuid::Uuid::new_v4()));
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        zip.start_file(
+            "word/document.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(b"<w:document><w:p><w:t>A &amp; B &#x130; &lt;tag&gt;<![CDATA[ literal & text]]></w:t></w:p></w:document>").unwrap();
+        zip.finish().unwrap();
+        let result = extract_docx(path.to_str().unwrap());
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(result.unwrap(), "A & B İ <tag> literal & text\n");
+    }
+
+    #[test]
+    fn compressed_docx_cannot_expand_past_the_text_budget() {
+        let path =
+            std::env::temp_dir().join(format!("ayla-docx-limit-{}.docx", uuid::Uuid::new_v4()));
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        zip.start_file(
+            "word/document.xml",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated),
+        )
+        .unwrap();
+        let chunk = [b' '; 65536];
+        for _ in 0..MAX_EXTRACT_TEXT_BYTES / chunk.len() {
+            zip.write_all(&chunk).unwrap();
+        }
+        zip.write_all(b" ").unwrap();
+        zip.finish().unwrap();
+        assert!(std::fs::metadata(&path).unwrap().len() < 1024 * 1024);
+        let result = extract_docx(path.to_str().unwrap());
+        std::fs::remove_file(path).unwrap();
+        assert!(result.unwrap_err().contains("32 MiB"));
+    }
 
     #[test]
     fn chunks_unicode_without_splitting_utf8() {

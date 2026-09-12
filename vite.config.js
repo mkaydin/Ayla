@@ -6,6 +6,7 @@ const MODEL_MIME_TYPES = new Map([
   ['.json', 'application/json; charset=utf-8'],
   ['.moc3', 'application/octet-stream'],
   ['.png', 'image/png'],
+  ['.js', 'text/javascript; charset=utf-8'],
 ]);
 
 function localMk6Model() {
@@ -58,7 +59,7 @@ export default defineConfig({
     open: false,
     fs: {
       // allow serving files outside project root if needed
-      strict: false
+      strict: true
     },
     headers: {
       'Cache-Control': 'no-cache'

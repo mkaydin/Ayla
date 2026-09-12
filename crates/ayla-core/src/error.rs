@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 
-/// Stable error envelope for Tauri adapters and the future Electron sidecar.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BackendError {
     pub code: String,

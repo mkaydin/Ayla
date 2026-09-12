@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "models": [
+    {
+      "id": "supertonic-3-int8-f1",
+      "version": "2026-05-11",
+      "kind": "tts",
+      "engine": "supertonic",
+      "provider": "cpu",
+      "license": "BigScience Open RAIL-M",
+      "licenseFile": "tts/supertonic3-int8/MODEL_LICENSE",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+      "files": [
+        {
+          "path": "tts/supertonic3-int8/duration_predictor.int8.onnx",
+          "bytes": 3700147,
+          "sha256": "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db"
+        },
+        {
+          "path": "tts/supertonic3-int8/text_encoder.int8.onnx",
+          "bytes": 36416150,
+          "sha256": "c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff"
+        },
+        {
+          "path": "tts/supertonic3-int8/vector_estimator.int8.onnx",
+          "bytes": 78400833,
+          "sha256": "20cd86fa5c6effedfda0e7cffe5b0569ca401c440a0c3a1d72bf39286c0db3fd"
+        },
+        {
+          "path": "tts/supertonic3-int8/vocoder.int8.onnx",
+          "bytes": 25991073,
+          "sha256": "e923d60f53f95eb1ce235f1dc33ec56d9c057823c96fa6f8acf98f32b0da6152"
+        },
+        {
+          "path": "tts/supertonic3-int8/tts.json",
+          "bytes": 8253,
+          "sha256": "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09"
+        },
+        {
+          "path": "tts/supertonic3-int8/unicode_indexer.bin",
+          "bytes": 262144,
+          "sha256": "8402ca48e5189a8950138580b0fff64db6f072f24ac07cd54ba8b2fbb9883b30"
+        },
+        {
+          "path": "tts/supertonic3-int8/voice.bin",
+          "bytes": 517168,
+          "sha256": "67d5209b0ee8ce6c74105ffbe12fe6a7628aea3b4ba2fcb308a4a67938a93ce8"
+        }
+      ],
+      "archiveSha256": "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427"
+    },
+    {
+      "id": "omnilingual-asr-300m-ctc-int8",
+      "version": "2025-11-12",
+      "kind": "stt",
+      "engine": "omnilingual-asr-ctc",
+      "provider": "cpu",
+      "license": "Apache-2.0",
+      "licenseFile": "models/stt/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/LICENSE",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
+      "files": [
+        {
+          "path": "models/stt/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/model.int8.onnx",
+          "bytes": 365352120,
+          "sha256": "e7c4e54ee4c4c47829cc6667d5d00ed8ea7bef1dcfeef0fce766f77752a2726c"
+        },
+        {
+          "path": "models/stt/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/tokens.txt",
+          "bytes": 86423,
+          "sha256": "a7a044c52cb29cbe8b0dc1953e92cefd4ca16b0ed968177b6beab21f9a7d0b31"
+        }
+      ],
+      "archiveSha256": "cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed"
+    },
+    {
+      "id": "silero-vad",
+      "version": "sherpa-onnx-asr-models",
+      "kind": "vad",
+      "engine": "silero-vad",
+      "provider": "cpu",
+      "license": "MIT",
+      "licenseFile": "models/stt/SILERO_VAD_LICENSE",
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+      "files": [
+        {
+          "path": "models/stt/silero_vad.onnx",
+          "bytes": 643854,
+          "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+        }
+      ],
+      "archiveSha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+    }
+  ]
+}

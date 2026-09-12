@@ -79,6 +79,16 @@ pub struct SynthesisReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionReport {
+    #[serde(default)]
+    pub downloaded_sources: Vec<DownloadedPdf>,
+    #[serde(default)]
+    pub source_outcomes: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub warnings: Vec<String>,
     pub session_id: Uuid,
     pub query: String,
     pub enriched_query: String,
@@ -106,6 +116,8 @@ pub struct OllamaAnalyzeResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearxngResponse {
+    #[serde(default)]
+    pub unresponsive_engines: Vec<serde_json::Value>,
     #[serde(default)]
     pub query: String,
     pub results: Vec<SearxngResult>,

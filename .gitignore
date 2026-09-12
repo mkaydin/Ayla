@@ -5,14 +5,11 @@
 /dist/
 /release/
 /.electron-resources/
-/src-tauri/target/
 /target/
-/src-tauri/gen/
 /crates/*/target/
 /crates/*/Cargo.lock
 /coverage/
 /.nyc_output/
-/.tauri/
 /.vite/
 
 # Compiler, cache, and temporary artifacts
@@ -39,8 +36,12 @@ Thumbs.db
 .env.*.local
 # ONNX model files (large binaries, downloaded separately)
 /models/*.onnx
+/models/stt/**/*.onnx
+/tts/supertonic3-int8/*.onnx
+/tts/supertonic3-int8/*.bin
 /models/kws/*.onnx
 /tts/tts_piper_amy_low/*.onnx
+/tts/tts_piper_amy_low/espeak-ng-data/
 /tts/tts_piper_amy_en_model/*.onnx
 
 # Locally downloaded/imported papers. Repository documentation images belong

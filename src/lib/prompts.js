@@ -106,7 +106,7 @@ languages, file names, and significant concepts.
 Text:
 {text}
 
-Output ONLY a JSON array. Example: ["Rust", "Tauri", "Whisper", "Raspberry Pi"]`;
+Output ONLY a JSON array. Example: ["Rust", "Electron", "Whisper", "Raspberry Pi"]`;
 
 export const FACT_EXTRACTION_PROMPT = `Extract facts from this text. Each fact is a triple:
 (subject, predicate, object, confidence_0_to_1).

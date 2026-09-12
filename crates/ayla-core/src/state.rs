@@ -1,18 +1,27 @@
 use crate::{
     BackendApi, BackendFoundation, EventSink, MemoryConfig, MemoryManager, ProcessRegistry,
-    ResourceLocator, TtsService,
+    ResourceLocator, SttService, TtsService,
 };
 use std::sync::Arc;
 
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeCapabilities {
+    pub schema_version: u32,
+    pub storage_ready: bool,
+    pub stt: crate::SttStatus,
+    pub tts: crate::TtsStatus,
+}
+
 /// Complete host-neutral backend ownership aggregate.
 ///
-/// Tauri keeps its existing separately managed state during parity testing.
 /// The Electron sidecar will own one of these and dispatch every request
 /// through the contained services.
 pub struct BackendState {
     foundation: BackendFoundation,
     memory: MemoryManager,
     processes: ProcessRegistry,
+    stt: SttService,
     tts: TtsService,
 }
 
@@ -23,11 +32,13 @@ impl BackendState {
         events: Arc<dyn EventSink>,
     ) -> Self {
         let tts = TtsService::new(&resources);
+        let stt = SttService::new(&resources);
         let memory = MemoryManager::new(config).await;
         Self {
             foundation: BackendFoundation::new(resources, events),
             memory,
             processes: ProcessRegistry::new(),
+            stt,
             tts,
         }
     }
@@ -37,11 +48,15 @@ impl BackendState {
         resources: ResourceLocator,
         events: Arc<dyn EventSink>,
     ) -> Self {
+        // Offline mode disables network/database services, not local models.
+        let stt = SttService::new(&resources);
+        let tts = TtsService::new(&resources);
         Self {
             foundation: BackendFoundation::new(resources, events),
             memory: MemoryManager::offline(config),
             processes: ProcessRegistry::new(),
-            tts: TtsService::disabled(),
+            stt,
+            tts,
         }
     }
 
@@ -63,5 +78,18 @@ impl BackendState {
 
     pub fn tts(&self) -> &TtsService {
         &self.tts
+    }
+
+    pub fn stt(&self) -> &SttService {
+        &self.stt
+    }
+
+    pub fn runtime_capabilities(&self) -> RuntimeCapabilities {
+        RuntimeCapabilities {
+            schema_version: 1,
+            storage_ready: self.memory.is_db_ready(),
+            stt: self.stt.status(),
+            tts: self.tts.status(),
+        }
     }
 }

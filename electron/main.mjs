@@ -8,6 +8,7 @@ import {
   dialog,
   ipcMain,
   Notification,
+  session,
   shell,
 } from 'electron';
 import {
@@ -23,19 +24,37 @@ import {
   validateRequestId,
 } from './ipc-policy.mjs';
 import { startStaticServer } from './static-server.mjs';
+import { startStorageRecovery } from './storage-recovery.mjs';
+import { writeDiagnostic } from './support-diagnostics.mjs';
 
 const electronDirectory = dirname(fileURLToPath(import.meta.url));
 const projectDirectory = dirname(electronDirectory);
 const preloadPath = join(electronDirectory, 'preload.cjs');
 const developmentUrl = process.env.AYLA_ELECTRON_DEV_URL || '';
+const installedResourceDirectory = process.env.AYLA_RESOURCE_DIR || (app.isPackaged ? process.resourcesPath : '');
 const iconPath = join(
-  app.isPackaged ? process.resourcesPath : projectDirectory,
-  ...(app.isPackaged ? ['assets'] : ['electron', 'assets']),
+  installedResourceDirectory || projectDirectory,
+  ...(installedResourceDirectory ? ['assets'] : ['electron', 'assets']),
   process.platform === 'win32' && !app.isPackaged ? 'icon.ico' : 'icon.png',
 );
 app.setName('Ayla');
+if (app.commandLine.hasSwitch('no-sandbox')) {
+  console.error('Ayla requires Chromium sandboxing. Use a supported host or native Arch package.');
+  app.exit(64);
+}
+app.setPath('userData', process.env.AYLA_DATA_DIR || join(app.getPath('appData'), 'ayla'));
+const smokeTest = process.argv.includes('--smoke-test');
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => {
+  if (applicationWindow && !applicationWindow.isDestroyed()) {
+    if (applicationWindow.isMinimized()) applicationWindow.restore();
+    applicationWindow.show();
+    applicationWindow.focus();
+  }
+});
 
 function findLocalModelDirectory() {
+  if (process.env.AYLA_DISABLE_AVATAR === '1') return null;
   const candidates = [
     process.env.AYLA_LIVE2D_MODEL_DIR,
     join(process.cwd(), 'Mk6_1.0'),
@@ -51,15 +70,24 @@ let staticServer = null;
 let sidecar = null;
 let trustedOrigin = '';
 let quitAfterCleanup = false;
+let stopStorageRecovery = () => {};
 const recentNotifications = new Map();
 
 const FORWARDED_BACKEND_EVENTS = new Set([
+  'knowledge-changed',
   'ingest-progress',
   'kb-cleanup-progress',
   'ocr-started',
   'ocr-progress',
+  'code-analysis-started',
+  'code-analysis-progress',
   'search-started',
   'search-progress',
+  'stt-state',
+  'stt-level',
+  'stt-partial',
+  'stt-final',
+  'stt-error',
 ]);
 
 function assertTrustedSender(event) {
@@ -132,24 +160,26 @@ function showDesktopNotification(rawPayload) {
 
 function createSidecar() {
   const binaryPath = process.env.AYLA_SIDECAR_BIN || (
-    app.isPackaged
-      ? packagedSidecarPath(process.resourcesPath)
+    installedResourceDirectory
+      ? packagedSidecarPath(installedResourceDirectory)
       : developmentSidecarPath(projectDirectory)
   );
-  const resourceDirectory = app.isPackaged ? process.resourcesPath : '';
+  const resourceDirectory = installedResourceDirectory;
   const backend = new SidecarManager({
     binaryPath,
     cwd: app.isPackaged ? app.getPath('userData') : projectDirectory,
     env: {
       ...process.env,
       AYLA_DATA_DIR: app.getPath('userData'),
+      ...(resourceDirectory ? { AYLA_CONFIG_FILE: process.env.AYLA_CONFIG_FILE || join(app.getPath('userData'), 'settings.env') } : {}),
       ...(resourceDirectory ? { AYLA_RESOURCE_DIR: resourceDirectory } : {}),
       ...(!app.isPackaged
-        ? { AYLA_DEVELOPMENT_ROOT: join(projectDirectory, 'src-tauri') }
+        ? { AYLA_DEVELOPMENT_ROOT: projectDirectory }
         : {}),
     },
   });
   backend.on('status', status => {
+    writeDiagnostic(app.getPath('userData'), { event: 'backend-status', ...status });
     if (applicationWindow && !applicationWindow.isDestroyed()) {
       applicationWindow.webContents.send('ayla:backend-status-changed', status);
     }
@@ -299,6 +329,19 @@ async function createWindow() {
     trustedOrigin = staticServer.origin;
   }
 
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    let requestingOrigin = '';
+    try { requestingOrigin = new URL(details.requestingUrl || '').origin; } catch {}
+    const mediaTypes = details.mediaTypes || [];
+    const audioOnly = mediaTypes.includes('audio') && !mediaTypes.includes('video');
+    callback(
+      permission === 'media'
+      && audioOnly
+      && requestingOrigin === trustedOrigin
+      && webContents === applicationWindow?.webContents,
+    );
+  });
+
   applicationWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -338,9 +381,12 @@ async function createWindow() {
       if (isMainFrame) cancelRendererRequests();
     },
   );
-  applicationWindow.webContents.on('render-process-gone', cancelRendererRequests);
+  applicationWindow.webContents.on('render-process-gone', (_event, details) => {
+    writeDiagnostic(app.getPath('userData'), { event: 'renderer-crash', exitCode: details.exitCode });
+    cancelRendererRequests();
+  });
   applicationWindow.webContents.once('destroyed', cancelRendererRequests);
-  applicationWindow.once('ready-to-show', () => applicationWindow?.show());
+  applicationWindow.once('ready-to-show', () => { if (!smokeTest) applicationWindow?.show(); });
   applicationWindow.on('closed', () => {
     applicationWindow = null;
   });
@@ -350,6 +396,7 @@ async function createWindow() {
 
 app.whenReady()
   .then(async () => {
+    writeDiagnostic(app.getPath('userData'), { event: 'application-start', appVersion: app.getVersion(), electronVersion: process.versions.electron, nodeVersion: process.versions.node });
     registerIpcHandlers();
     sidecar = createSidecar();
     const backendStart = sidecar.start().catch(error => {
@@ -357,9 +404,26 @@ app.whenReady()
     });
     await createWindow();
     await backendStart;
+    stopStorageRecovery = startStorageRecovery(sidecar);
+    if (smokeTest) {
+      const result = await applicationWindow.webContents.executeJavaScript(`(async () => {
+        const deadline = Date.now() + 30000;
+        while (!document.querySelector('#chat-input') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+        const panels = [...document.querySelectorAll('[data-panel-id]')].map(el => el.dataset.panelId);
+        const capabilities = await window.aylaDesktop.invoke('get_runtime_capabilities', {});
+        return { panels, avatarAvailable: window.__app?.avatarAvailable, backend: await window.aylaDesktop.backendStatus(), capabilities };
+      })()`);
+      const expected = ['chat', 'ocr', 'code', 'search', 'kb', 'status'];
+      if (expected.some(panel => !result.panels.includes(panel)) || !result.backend.backendAvailable) {
+        throw new Error(`Packaged smoke test failed: ${JSON.stringify(result)}`);
+      }
+      console.log(JSON.stringify({ status: 'ok', ...result }));
+      app.quit();
+    }
   })
   .catch(error => {
-    dialog.showErrorBox('Ayla failed to start', error.stack || error.message);
+    if (smokeTest) { console.error(error.stack || error.message); process.exitCode = 1; }
+    else dialog.showErrorBox('Ayla failed to start', error.stack || error.message);
     app.quit();
   });
 
@@ -375,6 +439,10 @@ app.on('before-quit', event => {
   if (quitAfterCleanup) return;
   event.preventDefault();
   quitAfterCleanup = true;
+  writeDiagnostic(app.getPath('userData'), { event: 'application-stop' });
+  stopStorageRecovery();
+  // Stop renderer timers/IPC before tearing down their backend.
+  applicationWindow?.destroy();
   Promise.allSettled([
     sidecar?.stop(),
     staticServer?.close(),

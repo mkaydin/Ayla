@@ -1,395 +1,209 @@
-<p align="center">
-  <img src="images/ayla-symbol.svg" width="150" height="150" alt="Ayla symbol">
-</p>
-
+<p align="center"><img src="images/ayla-symbol.svg" width="150" alt="Ayla"></p>
 <h1 align="center">Ayla</h1>
 
-<p align="center"><strong>Local AI Coworker with Knowledge Memory</strong></p>
+Ayla is a Linux desktop AI coworker with streaming chat, persistent knowledge,
+GLM OCR, research, code analysis, and offline Turkish/English speech. Electron
+hosts the interface; one Rust sidecar runs the backend and inference services.
+The optional Live2D avatar is supplied separately. Chat and tools work without it.
 
-Ayla is a desktop AI coworker for conversation, research, document processing,
-and long-term knowledge management. The interface combines a responsive Live2D
-avatar with streaming chat, speech, OCR, meta-search, and a persistent knowledge
-graph.
+The first release targets **Linux x86_64**: AppImage, a user installer that builds
+from source, and native Arch/AUR recipes. The portable build targets glibc 2.36
+or newer. Cross-distribution desktop acceptance remains a release gate; see
+[the production plan](docs/PRODUCTION_READINESS_PLAN.md) and
+[release procedure](packaging/RELEASE.md) for current evidence.
 
-Ayla is presented as a capable colleague and research partner—not a demon,
-servant, or roleplay character. Her runtime prompt emphasizes collaboration,
-accuracy, user agency, useful initiative, and honest uncertainty.
+<p align="center"><img src="images/Screenshot_20260805_095628.png" alt="Ayla chat and optional avatar" width="100%"></p>
 
-Electron/Chromium is the primary high-performance desktop target. The Tauri
-build remains available as a compatibility/reference host, and both use the
-same Tauri-independent Rust backend.
+## Features
 
-## Screenshots
+- Ollama chat with streaming, cancellation, persistent sessions, Markdown,
+  syntax highlighting, sanitized HTML, and KaTeX mathematics.
+- Supertonic 3 INT8 F1 speech in Turkish and English; Omnilingual 300M INT8
+  dictation with Silero VAD. Models and their licenses are bundled and hashed.
+- In-process PDFium geometry and `glm-ocr:latest` vision OCR, bounded workers,
+  model-version-aware resume cache, page citations, deterministic knowledge
+  extraction, and optional semantic assembly with explicit cloud consent.
+- General-knowledge gathering and scientific-paper research with SearXNG,
+  bounded public-URL fetching, source-linked reports, and visible partial results.
+  Guarded Lightpanda DOM extraction falls back to HTTP extraction when the
+  required isolation controls are unavailable. Remote page scripts are disabled.
+- Tree-sitter code analysis, optional semantic analysis, reviewable artifacts,
+  revision comparison, approved graph/vector search, and run removal.
+- One authoritative UID graph with bounded UI pagination. Document approval
+  records a durable operation before changing storage; failed imports are
+  excluded from retrieval and can be retried from Knowledge Base → Files.
 
-<p align="center">
-  <img src="images/Screenshot_20260805_095628.png" alt="Ayla streaming a technical chat response beside the Live2D coworker avatar" width="100%">
-</p>
+## Local prerequisites
 
-<p align="center"><em>Streaming technical chat with persistent sessions, rich Markdown, process-aware Live2D posing, and the service dashboard.</em></p>
-
-| Research and knowledge gathering | Knowledge graph analysis |
-|---|---|
-| <img src="images/Screenshot_20260804_233734.png" alt="Ayla presenting a generated knowledge document and downloaded scientific papers" width="100%"> | <img src="images/Screenshot_20260805_094301.png" alt="Ayla analyzing communities in the knowledge graph" width="100%"> |
-| General-knowledge synthesis, scientific PDFs, provenance, and KB approval. | Community/gravity graph view with incremental AI analysis and progress. |
-
-| Persistent Meta Search | Document processing |
-|---|---|
-| <img src="images/Screenshot_20260805_100158.png" alt="Ayla Meta Search mode selection and persistent topic history" width="100%"> | <img src="images/Screenshot_20260805_100119.png" alt="Ayla document processor rendering extracted structured content" width="100%"> |
-| General knowledge and scientific-paper modes with stored topic history. | Quick Extract/OCR results rendered for review before KB ingestion. |
-
-<p align="center">
-  <img src="images/Screenshot_20260805_095446.png" alt="Ayla showing a completed research result and downloaded paper processing controls" width="100%">
-</p>
-
-<p align="center"><em>Completed research retained in SurrealDB with downloaded-document Quick Extract and OCR actions.</em></p>
-
-## Highlights
-
-- **Streaming Ollama chat** with cancellable responses and selectable local or
-  cloud models, including `gemma4:e4b` and `nemotron-3-super:cloud`.
-- **Rich Markdown** rendered safely with DOMPurify, KaTeX mathematics, tables,
-  links, and Highlight.js syntax coloring for a broad range of languages.
-- **Partial-stream TTS** using Sherpa-ONNX/Piper. Ayla begins speaking complete
-  prose segments before the LLM response finishes, while Markdown markers,
-  code, equations, and tables are filtered from speech.
-- **Process announcements and desktop notifications** for search, Quick
-  Extract, OCR, knowledge ingestion, and graph analysis. Electron notifications
-  include a KDE-compatible `notify-send` fallback on Linux.
-- **Live2D Mk6 avatar** with cursor tracking, breathing, blinking, lip sync,
-  authored expressions, idle/sleep/service-loss states, and tablet/pen process
-  poses coordinated with chat and background work.
-- **Adaptive rendering** with framebuffer pixel budgets, quality modes,
-  resize-time throttling, visibility culling, and worker-assisted knowledge
-  graph layout for smooth ultrawide/fullscreen Electron use.
-- **Persistent memory** across conversations, episodes, semantic facts,
-  documents, embeddings, and entity-relation knowledge.
-- **Knowledge extraction** with automatic context sizing, bounded document
-  chunks, relation-completion passes, JSON recovery, transient Ollama retries,
-  and no default timeout for long generations.
-- **Knowledge graph tools** with classic and community/gravity views,
-  provenance-aware clusters, selected-neighbour highlighting, incremental AI
-  cleanup, duplicate merging, node renaming/meaning improvement, deterministic
-  relation normalization, checkpoints, and resume support.
-- **Document lifecycle safety**: graph creation/deletion controls are kept out
-  of the Graph tab. Deleting a document from Files removes only that source's
-  vectors and graph provenance; shared knowledge survives while another source
-  still supports it.
-- **Meta Search** for general knowledge documents or scientific papers, backed
-  by SearXNG and Lightpanda, with persistent topic history, downloaded PDFs,
-  extracted/OCR text, reports, and knowledge-base ingestion state in SurrealDB.
-- **Quick Extract and OCR** for uploaded or downloaded documents, with preview,
-  persistence, approval, progress reporting, and long-running request support.
-
-## Architecture
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ Shared Vite frontend                                        │
-│ Panels · PixiJS/Live2D · Markdown/KaTeX · TTS queue         │
-└──────────────────────┬──────────────────────┬────────────────┘
-                       │                      │
-             ┌─────────▼─────────┐  ┌────────▼──────────────┐
-             │ Tauri 2 reference│  │ Electron 41/Chromium │
-             │ thin command host│  │ sandboxed preload     │
-             └─────────┬─────────┘  └────────┬──────────────┘
-                       │           private framed MessagePack
-                       │          ┌──────────▼──────────────┐
-                       │          │ Rust sidecar           │
-                       │          └──────────┬──────────────┘
-             ┌─────────▼─────────────────────▼──────────────┐
-             │ Shared Rust core                            │
-             │ memory · DB · OCR/search · graph · TTS      │
-             └──────┬────────────┬─────────────┬────────────┘
-                    │            │             │
-               SurrealDB      Qdrant        Ollama
-               structured     vectors       chat/embed/OCR
-
-             SearXNG + Lightpanda → web and paper research
-```
-
-The Electron page has no Node.js access. Electron main validates IPC commands,
-owns the Rust sidecar, restricts navigation and external links, and forwards
-versioned requests, events, streaming deltas, structured errors, cancellation,
-and binary audio over private pipes.
-
-### Technology
-
-| Layer | Technology |
-|---|---|
-| Primary desktop host | Electron 41 / Chromium |
-| Reference desktop host | Tauri 2 |
-| Frontend | Vanilla JavaScript modules, Vite 5 |
-| Avatar rendering | PixiJS 6, pixi-live2d-display, Cubism 4 |
-| Markdown | marked, DOMPurify, KaTeX, Highlight.js |
-| Rust backend | Cargo workspace: `ayla-core`, `ayla-sidecar`, `ayla-ocr`, `ayla-research` |
-| LLM and embeddings | Ollama, configurable text model, `qwen3-embedding:0.6b` |
-| Text-to-speech | Sherpa-ONNX Piper VITS (`amy-low`) |
-| Structured storage | SurrealDB |
-| Vector storage | Qdrant |
-| Graph | Petgraph with SurrealDB persistence |
-| Search | In-process `ayla-research` pipeline with SearXNG and Lightpanda |
-
-### Rust Workspace Packages
-
-| Package | Role |
-|---|---|
-| `ayla-core` | Host-independent application backend: memory, databases, knowledge graph, ingestion, chat orchestration, TTS, and the shared command API. |
-| `ayla-sidecar` | Electron's private framed-MessagePack adapter. It owns `ayla-core`, dispatches validated commands, streams events/audio, and supports request cancellation. |
-| `ayla-ocr` | In-process PDF rendering and page OCR through Ollama. It owns temporary render files and reports page-level progress without launching a helper executable. |
-| `ayla-research` | In-process scientific research pipeline: SearXNG discovery, PDF download, Lightpanda rendering, extraction, Ollama analysis, and cross-source synthesis. |
-
-The former `alice-core` and `alice-sidecar` packages were renamed to
-`ayla-core` and `ayla-sidecar`. OCR and research were also moved from sibling
-binary projects into the workspace as linked Rust libraries. Electron now
-packages one Rust executable—`ayla-sidecar`—with OCR and research compiled into
-it.
-
-## Requirements
-
-- Rust 1.77.2 or newer
-- Node.js 22 LTS or newer recommended
-- Docker with Compose
-- Ollama
-- Linux, Windows, or macOS for Electron
-- Tauri platform dependencies only when building the reference Tauri host
-
-The Mk6 Live2D model is licensed separately. Its source directory is gitignored
-and is not redistributed by this repository.
-
-## Quick Start
+Install Node >=22.12, Rust >=1.88, npm, Git, a C/C++ toolchain, pkg-config,
+OpenSSL/xz/bzip2 development libraries, and Ollama. A graphical Linux desktop
+and Electron's native GTK/NSS/audio/GBM libraries are required to launch.
+Docker Compose is an optional way to provide local persistence/search services;
+existing compatible services can instead be configured by endpoint.
 
 ```bash
-# Clone the renamed repository.
-git clone <repo-url> Ayla
-cd Ayla
-
-npm install
-
-# Create local service credentials. Replace both placeholder secrets.
-cp .env.example .env
-# Generate a secret with: openssl rand -hex 32
-
-# Install the standard local models.
-ollama pull gemma4:e4b
-ollama pull qwen3-embedding:0.6b
-ollama pull deepseek-ocr          # optional, used for PDF OCR
-
-# Start persistent/search services.
-docker compose up -d
-
-# Verify the environment.
-bash doctor.sh
-
-# Primary desktop build.
+npm ci
+npm run native:setup
+npm run models:setup
+npm run services:setup -- --start
 npm run electron:dev
 ```
 
-Install the licensed avatar as `Mk6_1.0/Mk6.model3.json`, or point
-`AYLA_LIVE2D_MODEL_DIR` at its directory. OCR and scientific research require
-no sibling repositories or separately built helper executables.
+Model setup downloads missing `glm-ocr:latest`, `qwen3-embedding:0.6b`, and
+`gemma4:e4b`. Ollama must already be running. `npm run models:setup -- --cloud`
+also prepares the optional `nemotron-3-super:cloud` tag; cloud authorization and
+application consent are separate. LLM weights are not bundled in the AppImage.
+Speech weights are downloaded and verified from pinned upstream archives during setup.
+The native bootstrap verifies fixed Sherpa-ONNX/PDFium archive checksums.
 
-## Running and Building
+`services:setup` generates missing secrets and creates storage owned by your
+user. It preserves an existing `.env`. The Compose stack binds ports to loopback:
+SurrealDB 8000, Qdrant 6333/6334, SearXNG 8888, and Lightpanda 9222. It never
+starts Ollama or downloads LLMs implicitly.
 
-```bash
-npm run electron:dev              # Vite + debug Rust sidecar + Electron
-npm run electron:start            # Electron against an existing dist/
-npm run electron:stage            # Build and stage production resources
-npm run electron:pack             # Unpacked production application
-npm run electron:build            # AppImage and deb packages
+## Install from source
 
-npm run tauri dev                 # Reference Tauri host
-npm run tauri build               # Reference Tauri packages
-
-npm run test                      # JavaScript unit tests
-npm run build                     # Frontend production build
-npm run check                     # JavaScript tests + frontend build
-```
-
-Rust/Electron diagnostics:
+From a reviewed checkout:
 
 ```bash
-npm run sidecar:diagnostic
-npm run sidecar:diagnostic:live
-npm run sidecar:diagnostic:mutations
-npm run sidecar:diagnostic:features
-npm run sidecar:diagnostic:ocr
+./install.sh --source-dir "$PWD" --models
 ```
 
-## Configuration
-
-Copy `.env.example` to `.env`. Important settings include:
-
-| Setting | Purpose |
-|---|---|
-| `SURREAL_USER`, `SURREAL_PASS` | SurrealDB credentials |
-| `SEARXNG_SECRET` | SearXNG session signing secret |
-| `SEARXNG_URL` | SearXNG endpoint |
-| `AYLA_LLM_MODEL` | Ollama text model |
-| `AYLA_EMBED_MODEL` | Ollama embedding model |
-| `AYLA_OCR_MODEL` | Ollama vision model used by the in-process OCR crate |
-| `AYLA_OLLAMA_NUM_CTX` | Hardware-safe maximum context window |
-| `AYLA_OLLAMA_LONG_TIMEOUT_SECS` | Long LLM/OCR timeout; `0` disables it |
-| `AYLA_OLLAMA_TRANSPORT_RETRIES` | Transient extraction retry count, 0–10 |
-| `AYLA_LIGHTPANDA_URL` | Lightpanda WebSocket endpoint used by research |
-| `AYLA_LIVE2D_MODEL_DIR` | Licensed Mk6 model directory |
-
-Context is selected automatically from the serialized prompt and requested
-output budget, up to `AYLA_OLLAMA_NUM_CTX`. Do not set the ceiling to the
-model's advertised maximum unless the available RAM/VRAM can support its KV
-cache. Long extraction, graph analysis, and knowledge writing have no total
-HTTP timeout by default. Temporary transport errors, rate limits, and common
-5xx responses are retried without discarding chunks completed during the active
-ingestion.
-
-## Ayla's Character and Expression Contract
-
-The active character prompt lives in `src/lib/prompts.js` as `CORE_IDENTITY`.
-Ayla is defined as a trusted coworker and research partner:
-
-- collaborative rather than obedient or submissive;
-- concise, factual, and transparent about uncertainty;
-- proactive about relevant risks and next steps;
-- respectful of user agency and task boundaries;
-- careful with private and persistent memory;
-- warm when appropriate without performative roleplay.
-
-Every chat response begins internally with one expression tag. The UI consumes
-the tag, applies the matching Live2D expression, and excludes it from visible
-Markdown and TTS output.
-
-| Tag | Typical use |
-|---|---|
-| `[neutral]` | Normal answers, status, straightforward work |
-| `[messy]` | Deep analysis, complex tradeoffs, conflicting evidence |
-| `[surprised]` | Meaningful success or unexpected discovery |
-| `[happy]` | Shared milestone, relief, genuine warmth |
-| `[embarrassed]` | Ayla made a minor mistake or correction |
-| `[confused]` | Ambiguity, uncertainty, failed dependency, risky outcome |
-| `[angry]` | Serious preventable failure or credible threat; used rarely |
-| `[tired]` | Long-running/repetitive work reaching a natural pause |
-
-Process state is separate from expression state. Sleep mode activates after
-user inactivity only when no background job is running. Chat responses use the
-tablet pose; OCR, search, ingestion, and graph analysis use the tablet-and-pen
-working pose. Expressions fade and are cleared across sleep/wake transitions.
-
-## Panels
-
-| Panel | Shortcut | Purpose |
-|---|---:|---|
-| System Status | — | Service health, FPS/render data, logs, TTS and notification controls |
-| Chat | Ctrl+C | Streaming chat, sessions, Markdown/math/code, partial TTS, send-to-KB |
-| OCR | Ctrl+O | Upload, Quick Extract/OCR, preview, persistence, KB approval |
-| Meta Search | Ctrl+S | General knowledge or scientific papers, history, processing, ingestion |
-| Knowledge Base | Ctrl+K | Graph views, community navigation, AI cleanup, node/edge/file inspection |
-
-Panels are draggable, resizable, minimizable, and persisted between launches.
-
-## Knowledge and Memory
-
-| Layer | Storage | Purpose |
-|---|---|---|
-| Working memory | RAM | Current conversation context |
-| Conversation memory | SurrealDB | Chat sessions and messages |
-| Episodic memory | SurrealDB + Qdrant | Important past events |
-| Semantic memory | SurrealDB | Facts and preferences |
-| Knowledge graph | Petgraph + SurrealDB | Entities, meanings, relations, provenance |
-| Document vectors | Qdrant | Semantic document retrieval |
-
-The ingestion pipeline stores source text, selects an Ollama context, extracts
-entities/facts/relations in bounded chunks, performs relation completion when a
-chunk is fragmented, merges duplicate output, embeds document chunks, updates
-memory stores, and synchronizes a bounded graph snapshot to SurrealDB.
-
-AI graph cleanup first performs deterministic local normalization, then sends
-only unresolved nodes, relation labels, and plausible duplicate candidates to
-the LLM. Cloud models may run two batches concurrently; local models remain
-sequential. Completed batches are checkpointed and can resume.
-
-## Search and Documents
-
-Meta Search provides two collection modes:
-
-1. **General knowledge** gathers bounded public web evidence through SearXNG
-   and writes a provenance-preserving Markdown reference document for the KB.
-2. **Scientific papers** discovers and downloads PDFs, extracts metadata and
-   text, and produces a cross-paper synthesis.
-
-Search topics, reports, source records, downloaded PDFs, Quick Extract/OCR
-outputs, and ingestion status are stored in SurrealDB. PDFs can be processed
-with Quick Extract or the OCR model before KB approval.
-
-## Rendering and Performance
-
-Electron/Chromium is the recommended host for fullscreen and ultrawide use.
-The renderer limits framebuffer megapixels instead of blindly using full device
-pixel ratio, temporarily reduces quality during window resize, culls offscreen
-graph content, throttles expensive streaming Markdown work, and offloads the
-community/gravity layout to a worker. The Status panel can switch among Auto,
-Quality, and Performance modes and displays current FPS and render resolution.
-
-## Project Layout
-
-```text
-Ayla/
-├── src/                         frontend, panels, Live2D, Markdown, TTS queue
-├── styles/                      blue Ayla UI theme and panel styles
-├── Cargo.toml                   Rust workspace definition
-├── crates/
-│   ├── ayla-core/               shared host-independent application backend
-│   ├── ayla-sidecar/            Electron MessagePack protocol adapter
-│   ├── ayla-ocr/                in-process PDF rendering and Ollama OCR
-│   └── ayla-research/           in-process search, download, analysis, synthesis
-├── electron/                    secure main/preload, protocol, packaging tools
-├── src-tauri/                   thin reference Tauri host
-├── searxng/                     local search configuration
-├── docker-compose.yml           SurrealDB, Qdrant, SearXNG, Lightpanda
-├── Mk6_1.0/                     licensed avatar files; local and gitignored
-├── tts/                         local Piper/Sherpa resources
-├── MASTER_PLAN.md               historical architecture plan
-├── ELECTRON_RUST_MIGRATION_PLAN.md
-└── TEST_PLAN.md
-```
-
-First-party runtime identifiers now use Ayla consistently: Rust packages use
-`ayla-*`, Rust imports use `ayla_*`, Electron IPC channels use `ayla:*`, and
-application-specific environment variables use the `AYLA_*` prefix.
-
-## Testing
+From a published, signed release tag:
 
 ```bash
-bash doctor.sh --quick --no-docker --no-ollama
-bash doctor.sh
-cargo test --workspace
-cargo check --manifest-path src-tauri/Cargo.toml
+./install.sh --ref v0.1.0 --models
+```
+
+Import the maintainer's signing public key before tag verification. An immutable
+full commit can be selected with `--commit`; `--allow-unsigned` is an explicit
+development override. `--offline --source-dir ...` requires cached npm/Cargo
+packages and verified native archives. The installer runs checks, builds the
+application, and activates a versioned user installation at `~/.local/opt/ayla`.
+It creates `~/.local/bin/ayla` and a desktop entry. Add `~/.local/bin` to PATH.
+It refuses to replace an unrelated launcher.
+
+```bash
+./install.sh --status
+./install.sh --rollback
+./install.sh --uninstall
+```
+
+Uninstall preserves configuration, knowledge, artifacts, and Ollama models.
+Application rollback preserves data and does not reverse schema changes. Close
+Ayla and create a verified snapshot before upgrading storage schemas.
+
+## AppImage and Arch
+
+Download the AppImage and `SHA256SUMS` from the reviewed GitHub release. Verify
+the checksums/signature, make the file executable, and run it. The runtime
+requires a working Chromium sandbox; it is never launched with `--no-sandbox`.
+If FUSE is unavailable, use the AppImage's `--appimage-extract-and-run` mode.
+
+[Arch/AUR recipes](packaging/arch/README.md) provide source and binary packages.
+The source package uses system Electron 41. Packages do not start services or
+pull Ollama models in installation hooks. AUR submission is a maintainer step.
+
+Speech weights are acquired by `npm run native:setup` from the pinned upstream
+archives in `models/model-manifest.json`; archive and individual file digests
+are verified. They belong in the local model cache rather than ordinary Git
+history. Offline source installation can hydrate them from previously cached
+verified archives. AppImage and Arch binary payloads include curated speech
+resources, so runtime speech needs no model download.
+
+## Settings and privacy
+
+Development reads the checkout `.env`. Installed builds read
+`${XDG_CONFIG_HOME:-~/.config}/ayla/settings.env`; copy `.env.example` there and
+set credentials/endpoints. `AYLA_CONFIG_FILE` overrides the configuration path,
+`AYLA_DATA_DIR` the data directory, and `AYLA_RESOURCE_DIR` installed resources.
+An explicitly selected configuration never falls back to another `.env`.
+`AYLA_DATA_DIR` and `AYLA_RESOURCE_DIR` are launch-environment overrides; changing
+the settings-file location does not move the application data directory.
+
+`AYLA_LLM_MODEL` selects chat; `AYLA_RESEARCH_MODEL` independently selects
+research and falls back to chat when unset. OCR, embeddings, and semantic code
+analysis have their own model settings. OCR/code cloud consent defaults to
+false. Cloud research requires `AYLA_RESEARCH_ALLOW_CLOUD=true` and sends the
+topic and selected source evidence to the configured model. Choose a local
+research model for local processing. Existing cloud model selection alone does
+not enable this new research opt-in.
+
+One backend writer owns each data directory. Run only one application against
+an associated database/vector namespace. Storage-dependent approval is blocked
+while persistence is unavailable; an idle backend retries startup without
+replacing the window. Failed/deleting sources remain excluded from retrieval.
+Duplicate document names with different paths are rejected; rename the incoming
+source or explicitly remove the existing one. This release does not silently
+merge identically named documents from different directories.
+
+The configured embedding model, digest (when Ollama is available), and vector
+dimensions are recorded. A changed identity blocks storage initialization;
+restore the recorded model, or choose a fresh database/vector prefix and
+explicitly reapprove source inputs. Changing a model never reuses incompatible
+vectors. Pre-release databases without this metadata adopt the configured
+identity once; verify their existing model and back them up before upgrading.
+Document lists load metadata only. Full text is fetched on demand, with a
+128 MiB memory cache and 32 MiB per-document limit.
+
+OCR inputs are limited to 100 MiB/5,000 pages, rasters to 16 million pixels,
+rendered temporary images to 512 MiB, and retained resume caches to 2 GiB.
+Research downloads have byte limits; concurrent workers belong to their request
+and stop on cancellation. Private research stage records live under
+`ayla/research/jobs`; interrupted jobs are marked on backend startup.
+Downloads and completed reports remain until explicitly removed; monitor free
+disk space. A research request downloads at most ten PDFs of at most 100 MiB each.
+
+Runtime support logs rotate at 1 MiB with two previous files. They record only
+allowlisted lifecycle/version fields. Export them with
+`node scripts/support-bundle.mjs /path/to/support.json` and review before sharing.
+The exporter excludes backend stderr, settings, prompts, documents, and audio.
+
+## Backup and verification
+
+Graph-only rollback does not restore documents, vectors, or approval state.
+Deleted/failed sources stay excluded after graph rollback. Automatic graph
+backups retain the latest 25 snapshots and may contain deleted content until
+pruned. Coordinated snapshots are retained until you remove them.
+
+Close Ayla before exporting. Snapshots contain private knowledge and should
+stay local. Only restore trusted snapshots; checksums detect corruption rather
+than authenticate an unknown SQL export.
+
+```bash
+node scripts/knowledge-backup.mjs export --output /path/to/private-backups
+node scripts/knowledge-backup.mjs verify --snapshot /path/to/snapshot
+node scripts/knowledge-backup.mjs restore --snapshot /path/to/snapshot \
+  --database restored_memory --collection-prefix restored_ \
+  --data-dir /path/to/new-ayla-data
+```
+
+Restore targets must be fresh and different from active storage. The command
+restores structured storage, vectors, and owned artifacts together; it leaves
+configuration switching to you after checking retrieval. For installed-only
+backup tooling set `AYLA_SIDECAR_BIN` to that package's backend binary.
+
+```bash
 npm run check
+cargo test --workspace --locked
+npm run sidecar:diagnostic
+npm run doctor
+npm run release:linux
 ```
 
-See `TEST_PLAN.md` for manual workflows and performance checks.
+See [the test plan](docs/TEST_PLAN.md) for isolated integration checks. The
+portable release builder uses pinned Debian/Node/Rust images, verifies native
+and speech assets, inspects the ASAR, and launches an avatar-free installed
+renderer under Xvfb. Build artifacts are staged under `release/github`.
 
-## License
+## License and optional assets
 
-MIT License
-
-Copyright (c) 2026 Ayla contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-The separately licensed Mk6 Live2D model files are not covered or redistributed
-by this repository's MIT license.
+Ayla source is MIT. Bundled models retain their own terms, including the
+Supertonic Open RAIL-M use restrictions. The statically linked speech runtime
+includes eSpeak-NG under GPLv3; binary/source distribution obligations and
+notices are recorded in [the license inventory](docs/model-licenses.md).
+The older Piper model is not included in first-release packages pending a
+model-specific license review. Development can still use separately supplied
+Piper resources. Live2D/Cubism/avatar files are optional, never bundled or
+silently downloaded; supply lawfully obtained assets and the local Cubism core
+in `AYLA_LIVE2D_MODEL_DIR` to enable the avatar.

@@ -7,6 +7,18 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::time::Duration;
 
+fn validate_research_consent(config: &MemoryConfig) -> Result<(), String> {
+    if config
+        .research_model
+        .to_ascii_lowercase()
+        .contains(":cloud")
+        && !config.research_allow_cloud
+    {
+        return Err("Cloud research sends your topic and selected source evidence to the configured model. Set AYLA_RESEARCH_ALLOW_CLOUD=true in your settings to opt in, or choose a local AYLA_RESEARCH_MODEL.".into());
+    }
+    Ok(())
+}
+
 async fn connect_search_db(manager: &MemoryManager) -> Result<SurrealDB, String> {
     if !manager.is_db_ready() {
         return Err("DB offline: Meta Search history cannot be stored".into());
@@ -27,6 +39,7 @@ pub async fn write_general_knowledge_document(
     query: &str,
     report: &Value,
 ) -> Result<String, String> {
+    validate_research_consent(config)?;
     const MAX_OUTPUT_TOKENS: usize = 4_096;
     let evidence = crate::tools::meta_search::build_knowledge_document(query, report);
     let prompt = format!(
@@ -52,7 +65,7 @@ pub async fn write_general_knowledge_document(
     let response = client
         .post(format!("{}/api/chat", config.ollama_url))
         .json(&serde_json::json!({
-            "model": config.llm_model,
+            "model": config.research_model,
             "messages": [
                 {
                     "role": "system",
@@ -188,15 +201,12 @@ pub fn is_safe_public_http_url(raw: &str) -> bool {
     true
 }
 
-async fn fetch_knowledge_page(client: reqwest::Client, url: String) -> Option<String> {
+async fn fetch_knowledge_page(_client: reqwest::Client, url: String) -> Option<String> {
     const MAX_PAGE_BYTES: usize = 768 * 1024;
     if !is_safe_public_http_url(&url) {
         return None;
     }
-    let response = client
-        .get(&url)
-        .header("Range", format!("bytes=0-{}", MAX_PAGE_BYTES - 1))
-        .send()
+    let mut response = ayla_research::public_fetch::get_public(&url, Duration::from_secs(18))
         .await
         .ok()?;
     if !response.status().is_success()
@@ -218,8 +228,14 @@ async fn fetch_knowledge_page(client: reqwest::Client, url: String) -> Option<St
     {
         return None;
     }
-    let bytes = response.bytes().await.ok()?;
-    let raw = String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_PAGE_BYTES)]);
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if bytes.len().saturating_add(chunk.len()) > MAX_PAGE_BYTES {
+            return None;
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let raw = String::from_utf8_lossy(&bytes);
     let text = if content_type.contains("html") {
         html_to_text(&raw)
     } else {
@@ -467,17 +483,15 @@ async fn collect_search_pdfs(report: &Value, search_id: &str) -> Result<Vec<Valu
         }
     }
     paths.sort();
-    let pdf_source_urls: Vec<&str> = report
-        .get("papers_analyzed")
+    let downloaded_sources: Vec<&Value> = report
+        .get("downloaded_sources")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|paper| paper.get("source_url").and_then(Value::as_str))
-        .filter(|url| url.to_ascii_lowercase().contains(".pdf"))
         .collect();
     let total_paths = paths.len();
     let mut documents = Vec::with_capacity(total_paths);
-    for (index, path) in paths.into_iter().enumerate() {
+    for path in paths {
         let metadata = tokio::fs::metadata(&path)
             .await
             .map_err(|error| format!("Cannot inspect downloaded paper: {error}"))?;
@@ -486,27 +500,27 @@ async fn collect_search_pdfs(report: &Value, search_id: &str) -> Result<Vec<Valu
             .and_then(|name| name.to_str())
             .unwrap_or("paper.pdf")
             .to_string();
-        let source_url = pdf_source_urls
+        let matching: Vec<_> = downloaded_sources
             .iter()
-            .find(|url| {
-                url.rsplit('/')
-                    .next()
-                    .and_then(|segment| segment.split('?').next())
-                    .is_some_and(|segment| segment == name)
+            .filter(|source| {
+                source.get("file_path").and_then(Value::as_str)
+                    == Some(path.to_string_lossy().as_ref())
             })
             .copied()
-            .or_else(|| {
-                (pdf_source_urls.len() == total_paths)
-                    .then(|| pdf_source_urls.get(index).copied())
-                    .flatten()
-            })
-            .unwrap_or("");
+            .collect();
+        let source_urls: Vec<_> = matching
+            .iter()
+            .filter_map(|source| source.get("original_url").and_then(Value::as_str))
+            .collect();
+        let source_url = source_urls.first().copied().unwrap_or("");
         documents.push(serde_json::json!({
             "document_id": uuid::Uuid::new_v4().to_string(),
             "search_id": search_id,
             "name": name,
             "path": path.to_string_lossy(),
             "source_url": source_url,
+            "source_urls": source_urls,
+            "sha256": matching.first().and_then(|source| source.get("sha256")).cloned().unwrap_or(Value::Null),
             "mime_type": "application/pdf",
             "size_bytes": metadata.len(),
             "status": "downloaded",
@@ -544,7 +558,10 @@ async fn persist_search_result(
             "search_id": search_id,
             "query": query,
             "mode": mode,
-            "status": "complete",
+            "status": report.get("status").cloned().unwrap_or_else(|| Value::String("complete".into())),
+            "model": manager.config.research_model,
+            "source_outcomes": report.get("source_outcomes").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
+            "warnings": report.get("warnings").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
             "enriched_query": report.get("enriched_query").cloned().unwrap_or_default(),
             "total_results_found": report.get("total_results_found").cloned().unwrap_or_default(),
             "pdfs_downloaded": documents.len(),
@@ -572,11 +589,75 @@ async fn persist_search_result(
 
 pub async fn run_search(
     manager: &MemoryManager,
+    resources: &ResourceLocator,
+    events: &dyn EventSink,
+    processes: &ProcessRegistry,
+    query: String,
+    mode: Option<String>,
+) -> Result<Value, BackendError> {
+    validate_research_consent(&manager.config)
+        .map_err(|error| BackendError::new("research_cloud_consent_required", error))?;
+    if query.len() > 4096 {
+        return Err(BackendError::new(
+            "search_query_too_large",
+            "Research topics must be at most 4096 bytes",
+        ));
+    }
+    let root = std::env::var_os("AYLA_DATA_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("ayla-data"))
+        .join("research");
+    let id = uuid::Uuid::new_v4().to_string();
+    let job = ayla_research::job::ResearchJob::create(
+        &root,
+        &id,
+        &query,
+        mode.as_deref().unwrap_or("knowledge"),
+        &manager.config.research_model,
+    )
+    .map_err(|error| BackendError::new("research_journal", error.to_string()))?;
+    struct JournalEvents<'a> {
+        job: &'a ayla_research::job::ResearchJob,
+        target: &'a dyn EventSink,
+    }
+    impl EventSink for JournalEvents<'_> {
+        fn emit(&self, name: &str, payload: Value) -> Result<(), String> {
+            if name == "search-progress" {
+                if let Some(stage) = payload.get("stage").and_then(Value::as_str) {
+                    self.job
+                        .update(stage, "running")
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            self.target.emit(name, payload)
+        }
+    }
+    let wrapped = JournalEvents {
+        job: &job,
+        target: events,
+    };
+    let result = run_search_inner(manager, resources, &wrapped, processes, query, mode, id).await;
+    let status = match &result {
+        Ok(value) => value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("complete"),
+        Err(error) if error.code == "research_cancelled" => "cancelled",
+        Err(_) => "failed",
+    };
+    job.update(status, status)
+        .map_err(|error| BackendError::new("research_journal", error.to_string()))?;
+    result
+}
+
+async fn run_search_inner(
+    manager: &MemoryManager,
     _resources: &ResourceLocator,
     events: &dyn EventSink,
     processes: &ProcessRegistry,
     query: String,
     mode: Option<String>,
+    pid: String,
 ) -> Result<Value, BackendError> {
     let query = query.trim().to_string();
     if query.is_empty() {
@@ -590,7 +671,6 @@ pub async fn run_search(
     } else {
         "knowledge"
     };
-    let pid = uuid::Uuid::new_v4().to_string();
     log::info!("Search [{}]: starting for '{}' ({})", pid, query, mode);
 
     let mut parsed = if mode == "knowledge" {
@@ -599,6 +679,7 @@ pub async fn run_search(
         // second process-registry cancellation race here: search is a durable
         // background operation and renderer lifecycle must not report it as
         // user-cancelled.
+        events.emit("search-progress", serde_json::json!({"pid": pid, "stage": "searching", "percent": 15, "message": "Gathering public sources"})).map_err(BackendError::from)?;
         gather_knowledge_with_searxng(&manager.config, &query)
             .await
             .map_err(BackendError::from)?
@@ -615,7 +696,7 @@ pub async fn run_search(
             searxng_url: manager.config.searxng_url.clone(),
             lightpanda_url: manager.config.lightpanda_url.clone(),
             ollama_url: manager.config.ollama_url.clone(),
-            model: manager.config.llm_model.clone(),
+            model: manager.config.research_model.clone(),
             max_num_ctx: manager.config.ollama_num_ctx,
             request_timeout_secs: manager.config.ollama_long_timeout_secs as u64,
             max_papers: 10,
@@ -634,7 +715,7 @@ pub async fn run_search(
         let report = tokio::select! {
             result = ayla_research::search_with_progress(&query, options, Some(&progress)) => {
                 processes.finish(&pid).await;
-                result.map_err(|error| BackendError::new("research_failed", error.to_string()))?
+                result.map_err(|error| BackendError::new("research_failed", format!("{error:#}")))?
             }
             _ = cancel_rx => {
                 processes.finish(&pid).await;
@@ -655,6 +736,7 @@ pub async fn run_search(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let deterministic_document =
         crate::tools::meta_search::build_knowledge_document(&query, &parsed);
+    events.emit("search-progress", serde_json::json!({"pid": pid, "stage": "synthesizing", "percent": 82, "message": "Preparing source-linked knowledge"})).map_err(BackendError::from)?;
     let (knowledge_document, knowledge_generation) = if mode == "knowledge" {
         match write_general_knowledge_document(&manager.config, &query, &parsed).await {
             Ok(document) => (document, "llm"),
@@ -669,9 +751,21 @@ pub async fn run_search(
     } else {
         (deterministic_document, "structured_synthesis")
     };
+    if knowledge_generation == "structured_fallback" {
+        parsed["status"] = Value::String("partial".into());
+        let warnings = parsed
+            .as_object_mut()
+            .unwrap()
+            .entry("warnings")
+            .or_insert_with(|| serde_json::json!([]));
+        if let Some(warnings) = warnings.as_array_mut() {
+            warnings.push(Value::String("Knowledge synthesis was unavailable; the report retains deterministic source evidence".into()));
+        }
+    }
     let documents = collect_search_pdfs(&parsed, &search_id)
         .await
         .map_err(BackendError::from)?;
+    events.emit("search-progress", serde_json::json!({"pid": pid, "stage": "saving", "percent": 95, "message": "Saving research history"})).map_err(BackendError::from)?;
     let persistence_error = persist_search_result(
         manager,
         &search_id,
@@ -701,6 +795,45 @@ pub async fn run_search(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn downloaded_pdf_origins_follow_exact_files_not_rank_order() {
+        let directory =
+            std::env::temp_dir().join(format!("ayla-pdf-origins-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let first = directory.join("zz_hash_paper.pdf");
+        let second = directory.join("aa_hash_paper.pdf");
+        std::fs::write(&first, b"%PDF-first").unwrap();
+        std::fs::write(&second, b"%PDF-second").unwrap();
+        let report = serde_json::json!({
+            "download_dir": directory,
+            "papers_analyzed": [{"source_url":"https://example.com/first.pdf"}, {"source_url":"https://example.com/second.pdf"}],
+            "downloaded_sources": [
+                {"file_path": first, "original_url":"https://example.com/first.pdf", "sha256":"11".repeat(32)},
+                {"file_path": second, "original_url":"https://example.com/second.pdf", "sha256":"22".repeat(32)}
+            ]
+        });
+        let documents = collect_search_pdfs(&report, "fixture").await.unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(documents[0]["source_url"], "https://example.com/second.pdf");
+        assert_eq!(documents[0]["sha256"], "22".repeat(32));
+        assert_eq!(documents[1]["source_url"], "https://example.com/first.pdf");
+    }
+
+    #[test]
+    fn cloud_research_requires_its_own_opt_in() {
+        let mut config = MemoryConfig::default();
+        config.research_model = "example:cloud".into();
+        config.research_allow_cloud = false;
+        config.code_analysis_allow_cloud = true;
+        config.ocr_assembly_allow_cloud = true;
+        assert!(validate_research_consent(&config).is_err());
+        config.research_allow_cloud = true;
+        assert!(validate_research_consent(&config).is_ok());
+        config.research_model = "local:model".into();
+        config.research_allow_cloud = false;
+        assert!(validate_research_consent(&config).is_ok());
+    }
 
     #[test]
     fn knowledge_page_cleanup_removes_markup_and_active_content() {

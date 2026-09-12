@@ -15,11 +15,13 @@ pub fn build_markdown(
 
     md.push_str(&format!("# OCR Output: {source_pdf}\n\n"));
     md.push_str(&format!(
-        "*Generated with `{model}` | {} pages | {}*\n",
-        pages.len(),
-        chrono::Local::now().format("%Y-%m-%d %H:%M")
+        "*Generated with `{model}` | {} pages*\n",
+        pages.len()
     ));
-    md.push_str(&format!("*Prompt: \"{prompt}\"*\n\n"));
+    if !prompt.trim().is_empty() {
+        md.push_str(&format!("*Custom prompt: \"{prompt}\"*\n"));
+    }
+    md.push('\n');
     md.push_str("---\n\n");
 
     for page in pages {

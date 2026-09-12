@@ -2,26 +2,14 @@
 // Layer 5: In-memory Petgraph + SurrealDB persistence.
 
 use crate::db::surreal::SurrealDB;
+use crate::memory::graph_v2::{GraphImportBatch, GraphV2Store};
 use petgraph::stable_graph::{NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-// Keep graph persistence requests comfortably below SurrealDB's HTTP body
-// limit. The final live-table replacement is a small server-side transaction;
-// only these staging uploads cross HTTP in batches.
-const GRAPH_SYNC_BATCH_BYTES: usize = 512 * 1024;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum NodeType {
-    Person,
-    Project,
-    Tool,
-    Concept,
-    Document,
-    Other,
-}
+pub use super::graph_types::NodeType;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphNode {
@@ -69,170 +57,120 @@ impl KnowledgeGraph {
         }
     }
 
+    /// Graph-v2 is the only live storage. The in-memory workspace projection
+    /// supports deterministic name-based concept cleanup without touching native code/OCR UIDs.
     pub async fn load(&mut self) -> Result<(), String> {
-        let db = match self.db.clone() {
-            Some(d) => d,
-            None => return Ok(()),
+        let Some(db) = self.db.clone() else {
+            return Ok(());
         };
-        db.ensure_table("graph_node").await?;
-        db.ensure_table("graph_edge").await?;
-
-        // Load nodes
-        if let Ok(rows) = db.query("SELECT * FROM graph_node;").await {
-            for row in rows {
-                let name = row.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let type_str = row
-                    .get("node_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Other");
+        let store = GraphV2Store::new(db.clone());
+        store.initialize().await?;
+        db.ensure_table("knowledge_schema").await?;
+        if db
+            .query("SELECT * FROM knowledge_schema WHERE version = 2 LIMIT 1;")
+            .await?
+            .is_empty()
+        {
+            // One-time import; original tables remain read-only migration backups.
+            let rows = db.query("SELECT * FROM graph_node;").await?;
+            for mut row in rows {
                 let sources = row_sources(&row);
-                let aliases = row_string_array(&row, "aliases");
-                let meaning = row
-                    .get("meaning")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                let nt = match type_str {
-                    "Person" => NodeType::Person,
-                    "Project" => NodeType::Project,
-                    "Tool" => NodeType::Tool,
-                    "Concept" => NodeType::Concept,
-                    "Document" => NodeType::Document,
-                    _ => NodeType::Other,
-                };
-                if !name.is_empty() {
-                    let idx = self.upsert_node_sources(name, nt, &sources);
-                    self.graph[idx].aliases = aliases;
-                    self.graph[idx].meaning = meaning;
+                row["sources"] = serde_json::json!(sources);
+                if row.get("created").is_none() {
+                    row["created"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
                 }
+                if row.get("updated").is_none() {
+                    row["updated"] = row["created"].clone();
+                }
+                let node = serde_json::from_value::<GraphNode>(row).map_err(|error| {
+                    format!("Legacy graph migration stopped before changing live data: {error}")
+                })?;
+                let idx = self.upsert_node_sources(&node.name, node.node_type, &sources);
+                self.graph[idx].aliases = node.aliases;
+                self.graph[idx].meaning = node.meaning;
+                self.graph[idx].created = node.created;
+            }
+            for row in db.query("SELECT * FROM graph_edge;").await? {
+                let from = row
+                    .get("from_node")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let to = row
+                    .get("to_node")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let relation = row
+                    .get("relation")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                if from.is_empty() || to.is_empty() || relation.is_empty() {
+                    continue;
+                }
+                let from = self.upsert_node(from, NodeType::Concept);
+                let to = self.upsert_node(to, NodeType::Concept);
+                self.upsert_edge_sources(
+                    from,
+                    to,
+                    relation,
+                    row.get("confidence")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.8) as f32,
+                    &row_sources(&row),
+                );
+            }
+            if self.node_count() > 0 {
+                store
+                    .replace_legacy(GraphImportBatch::from_legacy(
+                        "workspace",
+                        &self.all_nodes().into_iter().cloned().collect::<Vec<_>>(),
+                        &self.all_edges(),
+                    ))
+                    .await?;
+            }
+            db.insert("knowledge_schema", serde_json::json!({"version": 2, "migrated_at": chrono::Utc::now().to_rfc3339(), "legacy_tables_retained_as_backup": true})).await?;
+        }
+        let snapshot = store.load().await?;
+        self.graph.clear();
+        self.name_to_idx.clear();
+        self.dirty_nodes.clear();
+        let mut identities = HashMap::new();
+        for node in snapshot
+            .nodes
+            .values()
+            .filter(|node| node.uid.starts_with("legacy:"))
+        {
+            let idx = self.upsert_node_sources(&node.name, node.node_type.clone(), &node.sources);
+            self.graph[idx].aliases = node.aliases.clone();
+            self.graph[idx].meaning = node.meaning.clone();
+            self.graph[idx].created = node.created.clone();
+            self.graph[idx].updated = node.updated.clone();
+            identities.insert(node.uid.clone(), idx);
+        }
+        for edge in snapshot.edges.values() {
+            if let (Some(from), Some(to)) =
+                (identities.get(&edge.from_uid), identities.get(&edge.to_uid))
+            {
+                self.upsert_edge_sources(
+                    *from,
+                    *to,
+                    &edge.relation,
+                    edge.confidence,
+                    &edge.sources,
+                );
             }
         }
-
-        // Load edges
-        if let Ok(rows) = db.query("SELECT * FROM graph_edge;").await {
-            for row in rows {
-                let from = row.get("from_node").and_then(|v| v.as_str()).unwrap_or("");
-                let to = row.get("to_node").and_then(|v| v.as_str()).unwrap_or("");
-                let rel = row.get("relation").and_then(|v| v.as_str()).unwrap_or("");
-                let conf = row
-                    .get("confidence")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.8) as f32;
-                if !from.is_empty() && !to.is_empty() {
-                    let fi = self.upsert_node(from, NodeType::Concept);
-                    let ti = self.upsert_node(to, NodeType::Concept);
-                    let mut sources = row_sources(&row);
-                    if sources.is_empty() {
-                        sources = self.graph[fi]
-                            .sources
-                            .iter()
-                            .filter(|source| self.graph[ti].sources.contains(source))
-                            .cloned()
-                            .collect();
-                    }
-                    self.upsert_edge_sources(fi, ti, rel, conf, &sources);
-                }
-            }
-        }
-
-        log::info!(
-            "Graph loaded: {} nodes, {} edges",
-            self.node_count(),
-            self.edge_count()
-        );
+        self.dirty_nodes.clear();
         Ok(())
     }
 
     pub async fn sync(&mut self) -> Result<(), String> {
-        let db = match &self.db {
-            Some(d) => d,
-            None => return Ok(()),
+        let Some(db) = &self.db else {
+            return Ok(());
         };
-
-        let mut node_records = Vec::with_capacity(self.graph.node_count());
-        for idx in self.graph.node_indices() {
-            let node = &self.graph[idx];
-            let mut record = serde_json::json!({
-                "name": node.name,
-                "node_type": format!("{:?}", node.node_type),
-                "source": node.sources.first().cloned().unwrap_or_default(),
-                "sources": node.sources,
-                "aliases": node.aliases,
-                "meaning": node.meaning,
-                "created": node.created,
-                "updated": node.updated,
-            });
-            crate::db::surreal::sanitize_value_for_storage(&mut record);
-            node_records.push(record);
-        }
-
-        let mut edge_records = Vec::with_capacity(self.graph.edge_count());
-        for edge_idx in self.graph.edge_indices() {
-            if let Some((from, to)) = self.graph.edge_endpoints(edge_idx) {
-                let edge = &self.graph[edge_idx];
-                let mut record = serde_json::json!({
-                    "from_node": self.graph[from].name,
-                    "to_node": self.graph[to].name,
-                    "relation": edge.relation,
-                    "confidence": edge.confidence,
-                    "sources": edge.sources,
-                    "created": edge.created,
-                });
-                crate::db::surreal::sanitize_value_for_storage(&mut record);
-                edge_records.push(record);
-            }
-        }
-
-        // Upload a complete candidate snapshot to uniquely named staging
-        // tables. The current live graph remains untouched if any batch fails.
-        let snapshot_id = uuid::Uuid::new_v4().simple().to_string();
-        let node_stage = format!("graph_node_stage_{snapshot_id}");
-        let edge_stage = format!("graph_edge_stage_{snapshot_id}");
-        let node_batches =
-            graph_insert_batches(&node_stage, &node_records, GRAPH_SYNC_BATCH_BYTES)?;
-        let edge_batches =
-            graph_insert_batches(&edge_stage, &edge_records, GRAPH_SYNC_BATCH_BYTES)?;
-        log::info!(
-            "Graph sync: staging {} nodes and {} edges in {} bounded request(s)",
-            node_records.len(),
-            edge_records.len(),
-            node_batches.len() + edge_batches.len()
-        );
-
-        for batch in node_batches.iter().chain(edge_batches.iter()) {
-            if let Err(error) = db.query(batch).await {
-                cleanup_graph_staging(db, &node_stage, &edge_stage).await;
-                return Err(format!("Graph staging upload failed: {error}"));
-            }
-        }
-
-        // Copy staging records into the live tables inside one small atomic
-        // transaction. INSERT ... (SELECT ...) performs the potentially large
-        // copy inside SurrealDB, avoiding another oversized HTTP request.
-        let mut commit = String::from("BEGIN TRANSACTION; DELETE graph_edge; DELETE graph_node;");
-        if !node_records.is_empty() {
-            commit.push_str(&format!(
-                " INSERT INTO graph_node (SELECT * FROM {node_stage}) RETURN NONE;"
-            ));
-        }
-        if !edge_records.is_empty() {
-            commit.push_str(&format!(
-                " INSERT INTO graph_edge (SELECT * FROM {edge_stage}) RETURN NONE;"
-            ));
-        }
-        commit.push_str(" COMMIT TRANSACTION;");
-        if let Err(error) = db.query(&commit).await {
-            cleanup_graph_staging(db, &node_stage, &edge_stage).await;
-            return Err(format!("Graph snapshot commit failed: {error}"));
-        }
-        cleanup_graph_staging(db, &node_stage, &edge_stage).await;
-
+        let nodes = self.all_nodes().into_iter().cloned().collect::<Vec<_>>();
+        let batch = GraphImportBatch::from_legacy("workspace", &nodes, &self.all_edges());
+        GraphV2Store::new(db.clone()).replace_legacy(batch).await?;
         self.dirty_nodes.clear();
-        log::info!(
-            "Graph synced: {} nodes, {} edges",
-            self.node_count(),
-            self.edge_count()
-        );
         Ok(())
     }
 
@@ -325,13 +263,19 @@ impl KnowledgeGraph {
         if from == to {
             return;
         }
+        let Some(relation) = normalize_relation_label(relation) else {
+            return;
+        };
         let existing = self
             .graph
             .edges_connecting(from, to)
-            .find(|edge| edge.weight().relation.eq_ignore_ascii_case(relation))
+            .find(|edge| {
+                normalize_relation_label(&edge.weight().relation).as_ref() == Some(&relation)
+            })
             .map(|edge| edge.id());
         if let Some(edge_idx) = existing {
             let edge = &mut self.graph[edge_idx];
+            edge.relation = relation;
             edge.confidence = edge.confidence.max(confidence);
             for source in sources.iter().filter(|source| !source.is_empty()) {
                 if !edge.sources.contains(source) {
@@ -344,7 +288,7 @@ impl KnowledgeGraph {
             from,
             to,
             GraphEdge {
-                relation: relation.to_string(),
+                relation,
                 confidence,
                 sources: unique_sources(sources.iter().cloned()),
                 created: chrono::Utc::now().to_rfc3339(),
@@ -476,6 +420,10 @@ impl KnowledgeGraph {
             if self.graph[idx].sources.is_empty() {
                 count += usize::from(self.remove_node(&name));
             } else {
+                // Legacy workspace descriptions/aliases have no contributor map.
+                // Keep shared identity/edges, but discard ambiguous removed-source text.
+                self.graph[idx].meaning.clear();
+                self.graph[idx].aliases.clear();
                 self.graph[idx].updated = chrono::Utc::now().to_rfc3339();
                 self.dirty_nodes.insert(idx);
             }
@@ -685,13 +633,15 @@ impl KnowledgeGraph {
         let Some(improved) = normalize_relation_label(improved_relation) else {
             return false;
         };
+        let Some(current_relation) = normalize_relation_label(current_relation) else {
+            return false;
+        };
         let current = self
             .graph
             .edges_connecting(from, to)
             .find(|edge| {
-                edge.weight()
-                    .relation
-                    .eq_ignore_ascii_case(current_relation)
+                normalize_relation_label(&edge.weight().relation).as_ref()
+                    == Some(&current_relation)
             })
             .map(|edge| edge.id());
         let Some(current_idx) = current else {
@@ -704,7 +654,8 @@ impl KnowledgeGraph {
             .graph
             .edges_connecting(from, to)
             .find(|edge| {
-                edge.id() != current_idx && edge.weight().relation.eq_ignore_ascii_case(&improved)
+                edge.id() != current_idx
+                    && normalize_relation_label(&edge.weight().relation).as_ref() == Some(&improved)
             })
             .map(|edge| edge.id());
         if let Some(duplicate_idx) = duplicate {
@@ -734,66 +685,6 @@ impl KnowledgeGraph {
         } else {
             false
         }
-    }
-}
-
-fn graph_insert_batches(
-    table: &str,
-    records: &[serde_json::Value],
-    max_bytes: usize,
-) -> Result<Vec<String>, String> {
-    if records.is_empty() {
-        return Ok(Vec::new());
-    }
-    if table.is_empty()
-        || !table
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '_')
-    {
-        return Err("Invalid graph staging table name".to_string());
-    }
-
-    let prefix = format!("INSERT INTO {table} [");
-    let suffix = "] RETURN NONE;";
-    let mut batches = Vec::new();
-    let mut batch = prefix.clone();
-    let mut batch_records = 0usize;
-
-    for record in records {
-        let encoded = serde_json::to_string(record)
-            .map_err(|error| format!("Graph record serialization failed: {error}"))?;
-        let separator_bytes = usize::from(batch_records > 0);
-        if prefix.len() + encoded.len() + suffix.len() > max_bytes {
-            return Err(format!(
-                "A graph record is {} bytes; the safe persistence limit is {} bytes",
-                encoded.len(),
-                max_bytes
-            ));
-        }
-        if batch.len() + separator_bytes + encoded.len() + suffix.len() > max_bytes {
-            batch.push_str(suffix);
-            batches.push(batch);
-            batch = prefix.clone();
-            batch_records = 0;
-        }
-        if batch_records > 0 {
-            batch.push(',');
-        }
-        batch.push_str(&encoded);
-        batch_records += 1;
-    }
-    if batch_records > 0 {
-        batch.push_str(suffix);
-        batches.push(batch);
-    }
-    Ok(batches)
-}
-
-async fn cleanup_graph_staging(db: &SurrealDB, node_stage: &str, edge_stage: &str) {
-    let cleanup =
-        format!("REMOVE TABLE IF EXISTS {node_stage}; REMOVE TABLE IF EXISTS {edge_stage};");
-    if let Err(error) = db.query(&cleanup).await {
-        log::warn!("Graph staging cleanup failed: {error}");
     }
 }
 
@@ -854,6 +745,22 @@ fn row_string_array(row: &serde_json::Value, field: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn equivalent_relation_separators_merge_evidence() {
+        let mut graph = KnowledgeGraph::new();
+        let sensor = graph.upsert_node("sensor", NodeType::Concept);
+        let pressure = graph.upsert_node("pressure", NodeType::Concept);
+        graph.upsert_edge_sourced(sensor, pressure, "has pressure", 0.7, "a.md");
+        graph.upsert_edge_sourced(sensor, pressure, "HAS_PRESSURE", 0.9, "b.md");
+        assert_eq!(graph.edge_count(), 1);
+        let edges = graph.all_edges();
+        assert_eq!(edges[0].1, "HAS_PRESSURE");
+        assert_eq!(edges[0].3, 0.9);
+        assert_eq!(edges[0].4, ["a.md", "b.md"]);
+        assert!(graph.refine_relation("sensor", "pressure", "has pressure", "MEASURES"));
+        assert_eq!(graph.all_edges()[0].1, "MEASURES");
+    }
 
     #[test]
     fn deleting_a_node_keeps_other_indices_valid() {
@@ -969,32 +876,5 @@ mod tests {
         let context = graph.entity_context_for_query("explain rl", 1);
         assert_eq!(context.len(), 1);
         assert!(context[0].contains("reward feedback"));
-    }
-
-    #[test]
-    fn graph_snapshot_records_are_split_below_the_http_limit() {
-        let records = (0..20)
-            .map(|index| serde_json::json!({ "name": format!("node-{index}"), "value": "x".repeat(80) }))
-            .collect::<Vec<_>>();
-        let batches = graph_insert_batches("graph_node_stage_test", &records, 420)
-            .expect("bounded graph batches");
-
-        assert!(batches.len() > 1);
-        assert!(batches.iter().all(|batch| batch.len() <= 420));
-        assert_eq!(
-            batches
-                .iter()
-                .map(|batch| batch.matches("node-").count())
-                .sum::<usize>(),
-            records.len()
-        );
-    }
-
-    #[test]
-    fn graph_snapshot_rejects_one_oversized_record() {
-        let records = vec![serde_json::json!({ "meaning": "x".repeat(500) })];
-        let error = graph_insert_batches("graph_node_stage_test", &records, 128)
-            .expect_err("oversized graph record must be rejected before upload");
-        assert!(error.contains("safe persistence limit"));
     }
 }

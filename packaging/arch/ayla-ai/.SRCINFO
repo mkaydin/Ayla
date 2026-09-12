@@ -1,0 +1,51 @@
+pkgbase = ayla-ai
+	pkgdesc = AI coworker with speech, OCR, research and persistent knowledge
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/mkaydin/Ayla
+	arch = x86_64
+	license = MIT
+	license = Apache-2.0
+	license = GPL-3.0-or-later
+	license = LicenseRef-OpenRAIL-M
+	makedepends = git
+	makedepends = rust>=1.88
+	makedepends = cargo
+	makedepends = nodejs>=22.12
+	makedepends = npm
+	makedepends = pkgconf
+	makedepends = binutils
+	depends = electron41>=41.10.7
+	depends = bash
+	depends = hicolor-icon-theme
+	depends = gcc-libs
+	depends = glibc
+	depends = openssl
+	depends = xz
+	depends = bzip2
+	optdepends = ollama: chat, embeddings and GLM OCR
+	optdepends = docker: optional storage and search services
+	optdepends = docker-compose: local service stack
+	provides = ayla
+	conflicts = ayla-ai-bin
+	noextract = sherpa-onnx-v1.13.4-linux-x64-static-lib.tar.bz2
+	noextract = pdfium-linux-x64-7881.tgz
+	noextract = sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2
+	noextract = sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2
+	noextract = silero_vad.onnx
+	options = !lto
+	options = !debug
+	source = ayla::git+https://github.com/mkaydin/Ayla.git#tag=v0.1.0
+	source = sherpa-onnx-v1.13.4-linux-x64-static-lib.tar.bz2::https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/sherpa-onnx-v1.13.4-linux-x64-static-lib.tar.bz2
+	source = pdfium-linux-x64-7881.tgz::https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/7881/pdfium-linux-x64.tgz
+	source = https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2
+	source = https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2
+	source = https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+	sha256sums = SKIP
+	sha256sums = 98b0e31996426f6e78244dbce1955548f2c64e8f01c4be75b85af7cdaa2e8d5c
+	sha256sums = 1470e21b8b4a3b4ad7f85684e2da11d94f3b69a86d81dee11b9b6709d927ac1d
+	sha256sums = 82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427
+	sha256sums = cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed
+	sha256sums = 9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
+
+pkgname = ayla-ai

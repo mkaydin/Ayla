@@ -1,0 +1,68 @@
+name: Linux release candidate
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Production JavaScript audit
+        run: |
+          npm ci --ignore-scripts
+          mkdir -p release/evidence
+          npm audit --omit=dev > release/evidence/npm-production-audit.txt
+      - name: Install pinned RustSec auditor
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          cargo +1.88.0 install cargo-audit --version 0.22.2 --locked
+      - name: Linux Rust dependency audit
+        run: cargo audit --target-os linux --target-arch x86_64 --json > release/evidence/rustsec.json
+      - name: Security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ayla-security
+          path: release/evidence/
+          retention-days: 14
+  arch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, test, lint, and launch native Arch candidate
+        run: bash scripts/build-arch-linux.sh
+      - name: Arch candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ayla-arch-x64
+          path: release/arch/
+          if-no-files-found: error
+          retention-days: 14
+  portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, test, inspect, and launch Linux candidate
+        run: bash scripts/build-portable-linux.sh
+      - name: Candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ayla-linux-x64
+          path: release/github/
+          if-no-files-found: error
+          retention-days: 14
