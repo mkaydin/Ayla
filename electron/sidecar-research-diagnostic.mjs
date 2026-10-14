@@ -3,7 +3,7 @@ import { diagnosticEnvironment } from './diagnostic-environment.mjs';
 import { SidecarManager, developmentSidecarPath } from './sidecar-manager.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 // The fixture contains only the explicitly requested public research topic.
-const env = { ...diagnosticEnvironment(), AYLA_DEVELOPMENT_ROOT: root, AYLA_RESEARCH_ALLOW_CLOUD: 'true', AYLA_OLLAMA_LONG_TIMEOUT_SECS: '180' };
+const env = { ...diagnosticEnvironment(), AYLA_DEVELOPMENT_ROOT: root, AYLA_OLLAMA_LONG_TIMEOUT_SECS: '180' };
 const manager = new SidecarManager({ binaryPath: process.env.AYLA_SIDECAR_BIN || developmentSidecarPath(root), cwd: root, env, startupTimeout: 60000 });
 const outcomes = [];
 manager.on('backend-event', message => {

@@ -35,6 +35,7 @@ import {
   framebufferPixels,
   normalizeRenderQuality,
   selectRenderResolution,
+  tickerFpsLimit,
 } from './lib/render-performance.js';
 
 // Replace Pixi's `new Function` shader uniform generator with its CSP-safe
@@ -111,9 +112,9 @@ app = new Application({
   state.rendererUnavailable = true;
   console.warn('Avatar renderer unavailable; panels remain usable.', error);
 }
-app.ticker.maxFPS = 60;
+app.ticker.maxFPS = tickerFpsLimit(60);
 app.ticker.minFPS = 20;
-Ticker.shared.maxFPS = 60;
+Ticker.shared.maxFPS = tickerFpsLimit(60);
 Ticker.shared.minFPS = 20;
 state.renderResolution = app.renderer.resolution;
 
@@ -154,14 +155,14 @@ function scheduleRendererResize() {
 
 window.addEventListener('resize', () => {
   state.isResizing = true;
-  app.ticker.maxFPS = 30;
-  Ticker.shared.maxFPS = 30;
+  app.ticker.maxFPS = tickerFpsLimit(30);
+  Ticker.shared.maxFPS = tickerFpsLimit(30);
   scheduleRendererResize();
   clearTimeout(rendererResizeEnd);
   rendererResizeEnd = setTimeout(() => {
     state.isResizing = false;
-    app.ticker.maxFPS = 60;
-    Ticker.shared.maxFPS = 60;
+    app.ticker.maxFPS = tickerFpsLimit(60);
+    Ticker.shared.maxFPS = tickerFpsLimit(60);
     scheduleRendererResize();
   }, 160);
 }, { passive: true });
@@ -520,6 +521,7 @@ async function main() {
   app.ticker.add(() => {
     expressionController.update(app.ticker.deltaMS);
     const now = performance.now();
+    state.diagnosticFrameTimes?.push(now);
     animationCoordinator.tick(now);
     measuredFrames++;
     if (now - measureStartedAt >= 1000) {

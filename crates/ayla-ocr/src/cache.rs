@@ -29,9 +29,9 @@ pub(crate) struct PageCache {
 impl PageCache {
     pub fn open(root: &Path, pdf: &Path, option_signature: &str) -> Result<Self> {
         let mut digest = Sha256::new();
-        // Bump when accepted page text normalization changes so older cached
+        // Bump when page text normalization or quality warnings change so older cached
         // model artifacts cannot bypass newer quality gates.
-        digest.update(b"ayla-ocr-page-cache-v2\0");
+        digest.update(b"ayla-ocr-page-cache-v3\0");
         digest.update(option_signature.as_bytes());
         digest.update(b"\0");
         let mut file = std::fs::File::open(pdf)
@@ -89,6 +89,14 @@ impl PageCache {
     }
 
     pub fn store(&self, page: u16, output: &PageOcrOutput) -> Result<()> {
+        // Partial evidence is reviewable, but must not suppress a future attempt.
+        if output
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "generation_incomplete")
+        {
+            return Ok(());
+        }
         let record = CachedPage {
             schema_version: CACHE_SCHEMA_VERSION,
             page,
@@ -198,6 +206,31 @@ mod tests {
                 & 0o777;
             assert_eq!(mode, 0o600);
         }
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn incomplete_generation_is_not_cached_as_a_completed_page() {
+        let temp =
+            std::env::temp_dir().join(format!("ayla-ocr-cache-partial-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp).unwrap();
+        let pdf = temp.join("fixture.pdf");
+        std::fs::write(&pdf, b"public fixture").unwrap();
+        let cache = PageCache::open(&temp.join("cache"), &pdf, "model=a").unwrap();
+        cache
+            .store(
+                1,
+                &PageOcrOutput {
+                    text: "Partial pressure 42.75 MPa".into(),
+                    warnings: vec![crate::types::OcrWarning::page(
+                        1,
+                        "generation_incomplete",
+                        "Public fixture",
+                    )],
+                },
+            )
+            .unwrap();
+        assert!(cache.load(1).unwrap().is_none());
         std::fs::remove_dir_all(temp).unwrap();
     }
 

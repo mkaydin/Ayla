@@ -61,6 +61,12 @@ user. It preserves an existing `.env`. The Compose stack binds ports to loopback
 SurrealDB 8000, Qdrant 6333/6334, SearXNG 8888, and Lightpanda 9222. It never
 starts Ollama or downloads LLMs implicitly.
 
+Containers are started explicitly after the project disk is mounted; automatic
+restart is disabled. Run `npm run services:setup -- --start` after reboot or
+remounting the disk. Compose refuses missing bind-mount paths instead of creating
+empty replacement storage. To stop services while retaining data, run
+`docker compose stop`.
+
 ## Install from source
 
 From a reviewed checkout:
@@ -169,6 +175,11 @@ pruned. Coordinated snapshots are retained until you remove them.
 Close Ayla before exporting. Snapshots contain private knowledge and should
 stay local. Only restore trusted snapshots; checksums detect corruption rather
 than authenticate an unknown SQL export.
+
+`npm run migration:review` provides a read-only aggregate review of document and
+graph counts, pending operations, retained graph snapshots, and embedding identity.
+Select development settings explicitly with
+`npm run migration:review -- --config .env`. This review does not replace a verified coordinated backup.
 
 ```bash
 node scripts/knowledge-backup.mjs export --output /path/to/private-backups

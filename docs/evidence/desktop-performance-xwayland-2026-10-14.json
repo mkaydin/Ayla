@@ -1,0 +1,426 @@
+{
+  "timestamp": "2026-10-14T11:55:52.633Z",
+  "platform": "linux",
+  "kernel": "7.2.9-2-cachyos",
+  "cpu": "AMD Ryzen 5 7600 6-Core Processor",
+  "totalMemoryBytes": 15867916288,
+  "session": "wayland",
+  "requestedOzonePlatform": "x11",
+  "electron": "41.10.7",
+  "chrome": "146.0.7680.216",
+  "gpu": {
+    "auxAttributes": {
+      "amdSwitchable": false,
+      "canSupportThreadedTextureMailbox": false,
+      "glImplementationParts": "(gl=none,angle=none)",
+      "glResetNotificationStrategy": 0,
+      "hardwareSupportsVulkan": false,
+      "inProcessGpu": true,
+      "initializationTime": 0,
+      "isAsan": false,
+      "isClangCoverage": false,
+      "jpegDecodeAcceleratorSupported": false,
+      "optimus": false,
+      "passthroughCmdDecoder": false,
+      "sandboxed": false,
+      "skiaBackendType": "None",
+      "subpixelFontRendering": true,
+      "targetCpuBits": 64,
+      "visibilityCallbackCallCount": 0
+    },
+    "gpuDevice": [
+      {
+        "active": true,
+        "deviceId": 5710,
+        "gpuPreference": 0,
+        "vendorId": 4098
+      },
+      {
+        "active": false,
+        "deviceId": 10370,
+        "gpuPreference": 0,
+        "vendorId": 4318
+      },
+      {
+        "active": false,
+        "deviceId": 11524,
+        "gpuPreference": 0,
+        "vendorId": 4318
+      }
+    ]
+  },
+  "gpuFeatures": {
+    "2d_canvas": "enabled",
+    "direct_rendering_display_compositor": "disabled_off_ok",
+    "gpu_compositing": "enabled",
+    "multiple_raster_threads": "enabled_on",
+    "opengl": "enabled_on",
+    "rasterization": "enabled",
+    "raw_draw": "disabled_off_ok",
+    "skia_graphite": "disabled_off",
+    "trees_in_viz": "disabled_off",
+    "video_decode": "enabled",
+    "video_encode": "disabled_software",
+    "vulkan": "disabled_off",
+    "webgl": "enabled",
+    "webgpu": "enabled",
+    "webgpu_on_vk_via_gl_interop": "disabled_off",
+    "webnn": "disabled_off"
+  },
+  "storageReady": true,
+  "fixture": {
+    "nodes": 1000,
+    "edges": 2000
+  },
+  "results": [
+    {
+      "scenario": "idle",
+      "width": 3440,
+      "height": 1440,
+      "devicePixelRatio": 1,
+      "avatar": true,
+      "renderQuality": "auto",
+      "renderResolution": 0.75,
+      "graphStatus": null,
+      "graphRows": null,
+      "renderer": {
+        "frames": 600,
+        "fps": 59.98260504454602,
+        "p50FrameMs": 16.699999999254942,
+        "p95FrameMs": 17.400000002235174,
+        "maxFrameMs": 18.600000001490116
+      },
+      "frames": 1800,
+      "durationMs": 10002.89999999851,
+      "fps": 179.94781513363807,
+      "p50FrameMs": 5.599999999998545,
+      "p95FrameMs": 5.600000000000364,
+      "maxFrameMs": 5.700000000000728,
+      "processes": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 0.63,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 203996,
+            "peakWorkingSetSize": 223760
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 5.28,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 527972,
+            "peakWorkingSetSize": 798636
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.14,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 87440,
+            "peakWorkingSetSize": 90148
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 4.75,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 462408,
+            "peakWorkingSetSize": 1252156
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.1,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 71400,
+            "peakWorkingSetSize": 71400
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "synthetic-text-updates",
+      "width": 3440,
+      "height": 1440,
+      "devicePixelRatio": 1,
+      "avatar": true,
+      "renderQuality": "auto",
+      "renderResolution": 0.75,
+      "graphStatus": null,
+      "graphRows": null,
+      "renderer": {
+        "frames": 600,
+        "fps": 59.99220101386373,
+        "p50FrameMs": 16.699999999254942,
+        "p95FrameMs": 17.399999998509884,
+        "maxFrameMs": 18.199999999254942
+      },
+      "frames": 1799,
+      "durationMs": 10001.300000000745,
+      "fps": 179.87661603990142,
+      "p50FrameMs": 5.599999999998545,
+      "p95FrameMs": 5.600000000002183,
+      "maxFrameMs": 11.199999999998909,
+      "processes": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 0.64,
+            "percentCPUUsage": 0.008326667003730148,
+            "idleWakeupsPerSecond": 2
+          },
+          "memory": {
+            "workingSetSize": 204008,
+            "peakWorkingSetSize": 223760
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 7.75,
+            "percentCPUUsage": 2.0566871609297253,
+            "idleWakeupsPerSecond": 429
+          },
+          "memory": {
+            "workingSetSize": 528948,
+            "peakWorkingSetSize": 798636
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.14,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 87260,
+            "peakWorkingSetSize": 90148
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 7.89,
+            "percentCPUUsage": 2.6145804928913887,
+            "idleWakeupsPerSecond": 459
+          },
+          "memory": {
+            "workingSetSize": 489680,
+            "peakWorkingSetSize": 1252156
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.15,
+            "percentCPUUsage": 0.04163349309936509,
+            "idleWakeupsPerSecond": 15
+          },
+          "memory": {
+            "workingSetSize": 71528,
+            "peakWorkingSetSize": 71528
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "knowledge-graph",
+      "width": 3440,
+      "height": 1440,
+      "devicePixelRatio": 1,
+      "avatar": true,
+      "renderQuality": "auto",
+      "renderResolution": 0.75,
+      "graphStatus": "",
+      "graphRows": "1000 nodes · 2000 edges",
+      "renderer": {
+        "frames": 601,
+        "fps": 60.07356763022927,
+        "p50FrameMs": 16.699999999254942,
+        "p95FrameMs": 17.399999998509884,
+        "maxFrameMs": 20.799999997019768
+      },
+      "frames": 1800,
+      "durationMs": 10004.400000002235,
+      "fps": 179.92083483263343,
+      "p50FrameMs": 5.599999999998545,
+      "p95FrameMs": 5.600000000005821,
+      "maxFrameMs": 11.099999999998545,
+      "processes": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 0.68,
+            "percentCPUUsage": 0.033288649978467234,
+            "idleWakeupsPerSecond": 5
+          },
+          "memory": {
+            "workingSetSize": 191512,
+            "peakWorkingSetSize": 223760
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 11.95,
+            "percentCPUUsage": 3.495307549614642,
+            "idleWakeupsPerSecond": 455
+          },
+          "memory": {
+            "workingSetSize": 528248,
+            "peakWorkingSetSize": 798636
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.14,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 87436,
+            "peakWorkingSetSize": 90148
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 10.53,
+            "percentCPUUsage": 2.197043658053723,
+            "idleWakeupsPerSecond": 379
+          },
+          "memory": {
+            "workingSetSize": 484496,
+            "peakWorkingSetSize": 1252156
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.18,
+            "percentCPUUsage": 0.024966377779044962,
+            "idleWakeupsPerSecond": 8
+          },
+          "memory": {
+            "workingSetSize": 71620,
+            "peakWorkingSetSize": 71620
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "relationship-gravity",
+      "width": 3440,
+      "height": 1440,
+      "devicePixelRatio": 1,
+      "avatar": true,
+      "renderQuality": "auto",
+      "renderResolution": 0.75,
+      "graphStatus": "499 communities · 2499 ms",
+      "graphRows": "1000 nodes · 2000 edges",
+      "renderer": {
+        "frames": 600,
+        "fps": 59.98440405495912,
+        "p50FrameMs": 16.699999999254942,
+        "p95FrameMs": 17.300000000745058,
+        "maxFrameMs": 17.799999997019768
+      },
+      "frames": 1798,
+      "durationMs": 10002.599999997765,
+      "fps": 179.75326415136084,
+      "p50FrameMs": 5.599999999998545,
+      "p95FrameMs": 5.600000000005821,
+      "maxFrameMs": 5.700000000004366,
+      "processes": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 0.7,
+            "percentCPUUsage": 0.013206494985929669,
+            "idleWakeupsPerSecond": 9
+          },
+          "memory": {
+            "workingSetSize": 192624,
+            "peakWorkingSetSize": 223760
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 16.72,
+            "percentCPUUsage": 3.1497490541442255,
+            "idleWakeupsPerSecond": 463
+          },
+          "memory": {
+            "workingSetSize": 529280,
+            "peakWorkingSetSize": 798636
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.14,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 87512,
+            "peakWorkingSetSize": 90148
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 16.11,
+            "percentCPUUsage": 3.6846129769691878,
+            "idleWakeupsPerSecond": 385
+          },
+          "memory": {
+            "workingSetSize": 502464,
+            "peakWorkingSetSize": 1252156
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.18,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 71664,
+            "peakWorkingSetSize": 71664
+          }
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Synthetic text updates measure DOM pressure, not real model streaming.",
+    "requestAnimationFrame timing measures renderer scheduling, not compositor presentation.",
+    "One local session does not qualify other GPUs or X11/Wayland sessions."
+  ]
+}

@@ -1,5 +1,10 @@
 # Linux release candidate evidence
 
+The October 14 follow-up is tracked in [the qualification follow-up](QUALIFICATION_FOLLOWUP_2026-10-14.md).
+It changes the working tree after the candidate below; existing `release/github`
+artifacts retain their original identity and must be regenerated before shipping
+these changes.
+
 Qualification: 2026-10-13 UTC / 2026-10-14 Europe/Istanbul. Candidate version
 0.1.0; protocol 1; knowledge schema 2. Base Git commit `82cb395`;
 the original is preserved on the local backup branch. The user authorized a

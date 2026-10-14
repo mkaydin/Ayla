@@ -9,6 +9,8 @@ const frontendModules = [
   'src/tts-player.js',
   'src/ui/chat-panel.js',
   'src/ui/kb-panel.js',
+  'src/ui/kb/files-tab.js',
+  'src/ui/kb/tables.js',
   'src/ui/ocr-panel.js',
   'src/ui/code-analysis-panel.js',
   'src/ui/search-panel.js',

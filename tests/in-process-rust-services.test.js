@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
 const root = path.resolve(import.meta.dirname, '..');
 const read = relativePath => readFileSync(path.join(root, relativePath), 'utf8');
+const readModule = relativePath => {
+  const directory = relativePath.replace(/\.rs$/, '');
+  return [read(relativePath), ...readdirSync(path.join(root, directory)).filter(name => name.endsWith('.rs')).sort().map(name => read(`${directory}/${name}`))].join('\n');
+};
 
 test('OCR and research are linked Rust libraries rather than helper processes', () => {
   const workspace = read('Cargo.toml');
   const coreManifest = read('crates/ayla-core/Cargo.toml');
-  const coreApi = read('crates/ayla-core/src/api.rs');
+  const coreApi = readModule('crates/ayla-core/src/api.rs');
   const research = read('crates/ayla-core/src/research.rs');
   const staging = read('electron/stage-resources.mjs');
 
@@ -101,12 +105,12 @@ test('STT supports Turkish and English with independent system and Chat controls
 });
 
 test('code analysis stays in-process and graph-v2 commits through staging and backups', () => {
-  const graphV2 = read('crates/ayla-core/src/memory/graph_v2.rs');
-  const coreApi = read('crates/ayla-core/src/api.rs');
+  const graphV2 = readModule('crates/ayla-core/src/memory/graph_v2.rs');
+  const coreApi = readModule('crates/ayla-core/src/api.rs');
   const config = read('crates/ayla-core/src/config.rs');
   const analyzerPanel = read('src/ui/code-analysis-panel.js');
   const ocrPanel = read('src/ui/ocr-panel.js');
-  const productionAdapter = graphV2.split('#[cfg(test)]')[0];
+  const productionAdapter = read('crates/ayla-core/src/memory/graph_v2.rs').split('#[cfg(test)]')[0] + read('crates/ayla-core/src/memory/graph_v2/store.rs');
   assert.match(graphV2, /from_code_analysis/);
   assert.match(graphV2, /missing target/);
   assert.match(graphV2, /remove_source/);
@@ -146,8 +150,8 @@ test('code analysis stays in-process and graph-v2 commits through staging and ba
 });
 
 test('knowledge base reads Graph-v2 with bounded history and recoverable rollback', () => {
-  const graphV2 = read('crates/ayla-core/src/memory/graph_v2.rs');
-  const coreApi = read('crates/ayla-core/src/api.rs');
+  const graphV2 = readModule('crates/ayla-core/src/memory/graph_v2.rs');
+  const coreApi = readModule('crates/ayla-core/src/api.rs');
   const kbPanel = read('src/ui/kb-panel.js');
   const sidecar = read('crates/ayla-sidecar/src/dispatcher.rs');
 

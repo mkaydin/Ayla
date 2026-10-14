@@ -5,7 +5,12 @@ services:
     user: "${AYLA_STORAGE_UID:-1000}:${AYLA_STORAGE_GID:-1000}"
     container_name: ayla-surrealdb
     ports: ["127.0.0.1:8000:8000"]
-    volumes: ["./data/surrealdb:/data"]
+    volumes:
+      - type: bind
+        source: ./data/surrealdb
+        target: /data
+        bind:
+          create_host_path: false
     # Compose substitutes ${SURREAL_USER}/${SURREAL_PASS} from .env at parse time and passes
     # the resulting literals to the surreal binary (the image entrypoint is `/surreal`, NOT a
     # shell, so `$VAR` would never be expanded inside the container — issue I1/R5).
@@ -14,7 +19,7 @@ services:
       --user ${SURREAL_USER:-root}
       --pass ${SURREAL_PASS:?SURREAL_PASS must be set in .env (see .env.example)}
       surrealkv:/data/memory.db
-    restart: unless-stopped
+    restart: "no"  # Start explicitly after the project disk is mounted.
     healthcheck:
       # The image exposes the CLI at /surreal and does not include wget.
       test: ["CMD", "/surreal", "isready", "--endpoint", "http://127.0.0.1:8000"]
@@ -33,8 +38,13 @@ services:
     ports:
       - "127.0.0.1:6333:6333"
       - "127.0.0.1:6334:6334"
-    volumes: ["./data/qdrant:/qdrant/storage"]
-    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./data/qdrant
+        target: /qdrant/storage
+        bind:
+          create_host_path: false
+    restart: "no"  # Start explicitly after the project disk is mounted.
     healthcheck:
       # The Qdrant image includes bash but no wget/curl.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
@@ -53,10 +63,23 @@ services:
       # text contains "with: openssl" (a colon-space) that would otherwise break YAML parsing.
       SEARXNG_SECRET: "${SEARXNG_SECRET:?SEARXNG_SECRET must be set in .env (generate with: openssl rand -hex 32)}"
     volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml
-      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
-      - ./data/searxng:/etc/searxng/data
-    restart: unless-stopped
+      - type: bind
+        source: ./searxng/settings.yml
+        target: /etc/searxng/settings.yml
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./searxng/limiter.toml
+        target: /etc/searxng/limiter.toml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/searxng
+        target: /etc/searxng/data
+        bind:
+          create_host_path: false
+    restart: "no"  # Start explicitly after the project disk is mounted.
     cap_drop: [ALL]
     cap_add: [CHOWN, SETGID, SETUID]
     healthcheck:
@@ -71,5 +94,5 @@ services:
     image: lightpanda/browser@sha256:65e0cbeffe1ee00a51894ad23ac73277eeca1c4122ccbb57164f84d19ff1d5d3
     container_name: ayla-lightpanda
     ports: ["127.0.0.1:9222:9222"]
-    restart: unless-stopped
+    restart: "no"  # Start explicitly after the project disk is mounted.
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }

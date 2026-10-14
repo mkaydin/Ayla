@@ -139,6 +139,7 @@
 /* ── Minimized state ──────────────────────── */
 
 .panel.minimized {
+  min-height: 0;
   height: var(--panel-header-h) !important;
   overflow: hidden;
   contain: layout paint style;
@@ -181,8 +182,9 @@
   cursor: default;
 }
 
-.panel.status-panel .panel-actions .close {
-  display: none;
+.panel.status-panel.minimized {
+  width: 240px !important;
+  min-width: 0;
 }
 
 /* ── Panel sidebar toolbar ────────────────── */

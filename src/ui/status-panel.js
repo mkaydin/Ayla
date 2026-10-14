@@ -45,7 +45,7 @@ export function initStatusPanel() {
   const panel = createPanel('status', 'SYSTEM STATUS', {
     x: 8, y: 8, width: 340, height: 420,
     minWidth: 260, minHeight: 200,
-    fixed: true, closable: false, className: 'status-panel',
+    fixed: true, closable: true, className: 'status-panel',
   });
 
   const body = panel.getContentEl();

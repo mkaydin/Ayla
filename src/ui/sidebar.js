@@ -8,6 +8,7 @@ const TOGGLE_BUTTONS = [
   { id: 'code',   icon: '\uD83E\uDDE9', label: 'Code',   shortcut: 'Ctrl+D' },
   { id: 'search', icon: '\uD83D\uDD0D', label: 'Search', shortcut: 'Ctrl+S' },
   { id: 'kb',     icon: '\uD83E\uDDE0', label: 'KB',     shortcut: 'Ctrl+K' },
+  { id: 'status', icon: '\u2699', label: 'System Status', shortcut: 'Ctrl+I' },
 ];
 
 export function initSidebar() {
@@ -47,6 +48,7 @@ export function initSidebar() {
     if (e.ctrlKey && e.key === 'd') { e.preventDefault(); toggleSidebarPanel('code'); }
     if (e.ctrlKey && e.key === 's') { e.preventDefault(); toggleSidebarPanel('search'); }
     if (e.ctrlKey && e.key === 'k') { e.preventDefault(); toggleSidebarPanel('kb'); }
+    if (e.ctrlKey && e.key === 'i') { e.preventDefault(); toggleSidebarPanel('status'); }
   });
 
   return sidebar;

@@ -27,8 +27,8 @@ npm run sidecar:diagnostic:documents
 npm run sidecar:diagnostic:backup
 npm run sidecar:diagnostic:ocr
 npm run sidecar:diagnostic:code:live
-npm run sidecar:diagnostic:features
-npm run sidecar:diagnostic:research
+AYLA_RESEARCH_MODEL=gemma4:e4b AYLA_RESEARCH_ALLOW_CLOUD=false npm run sidecar:diagnostic:features
+AYLA_RESEARCH_MODEL=gemma4:e4b AYLA_RESEARCH_ALLOW_CLOUD=false npm run sidecar:diagnostic:research
 npm run sidecar:diagnostic:soak -- 30
 node electron/sidecar-startup-diagnostic.mjs
 # Mono signed-16-bit little-endian PCM at 16 kHz:
@@ -40,6 +40,10 @@ The test Compose stack uses in-memory/tmpfs storage and different ports from
 user services. Model endpoints are inherited. OCR uses generated public
 fixture content; cloud-enabled checks may call the locally authorized cloud
 model. Do not replace diagnostic endpoints with production storage.
+
+The research diagnostic preserves configured cloud consent; it never enables it
+implicitly. The commands above select local research even if checkout chat uses a
+cloud model. Select another installed local model through `AYLA_RESEARCH_MODEL`.
 
 ```bash
 docker compose -p ayla-release-tests -f compose.test.yml down
@@ -99,3 +103,37 @@ commands, timestamps, and observed outcomes in the release evidence file.
 
 Unexecuted acceptance checks remain explicit release gates. No script publishes
 artifacts or assumes a signing key or permission decision.
+
+## Desktop measurement and storage review
+
+With the isolated Compose stack running, execute:
+
+```bash
+npm run desktop:diagnostic:performance
+npm run migration:review -- --config .env
+```
+
+The desktop diagnostic opens a separate fullscreen window with disposable data
+and a public 1,000-node/2,000-edge graph. It samples idle, synthetic text updates,
+classic graph, and Relationship Gravity. Results include actual renderer tick
+FPS/p95 intervals, browser scheduling intervals, process CPU/memory, viewport,
+GPU, and session type in `release/evidence/desktop-performance.json`.
+`AYLA_PERFORMANCE_SECONDS` selects 5–120 seconds per scenario;
+`AYLA_PERFORMANCE_OUTPUT` selects the report path. Record actual viewport size:
+a compositor may choose a size different from the requested 3440×1440.
+Text updates are a DOM fixture, not real inference streaming. Renderer ticks
+and browser scheduling do not establish compositor presentation timing.
+
+Migration review queries aggregate counts and embedding metadata only. It neither
+changes schemas nor fetches document/conversation text. Close Ayla and verify a
+coordinated snapshot before any actual migration. User-owned restore, real audio,
+human quality/citation review, and acceptance on additional desktops remain gates.
+
+Generate the public review corpus with `npm run ocr:fixtures`, then run
+`npm run sidecar:diagnostic:ocr:corpus`. Three PDFs, recognized Markdown, and
+`review-results.json` are written under `release/ocr-corpus`. Cases cover bilingual
+columns, a table/equation/figure, and rotated raster text. Critical token checks,
+missing expected Turkish words, and repeated-line signals help prioritize review;
+they do not establish reading-order, table association, or human acceptance.
+The corpus runner uses deterministic knowledge assembly and disables cloud
+assembly consent. Repeated short-line warnings preserve the original OCR text.

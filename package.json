@@ -42,7 +42,11 @@
     "installer:diagnostic": "node electron/sidecar-source-installer-diagnostic.mjs",
     "sidecar:diagnostic:research": "node electron/sidecar-research-diagnostic.mjs",
     "sidecar:diagnostic:soak": "node electron/sidecar-soak-diagnostic.mjs",
-    "release:arch": "bash scripts/build-arch-linux.sh"
+    "release:arch": "bash scripts/build-arch-linux.sh",
+    "desktop:diagnostic:performance": "npm run build && npm run sidecar:build && electron electron/desktop-performance-diagnostic.mjs",
+    "migration:review": "node scripts/migration-readiness.mjs",
+    "ocr:fixtures": "electron electron/ocr-corpus-fixtures.mjs",
+    "sidecar:diagnostic:ocr:corpus": "node electron/sidecar-ocr-corpus-diagnostic.mjs"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.1.3"
@@ -72,8 +76,9 @@
   },
   "overrides": {
     "pixi-live2d-display": {
-      "gh-pages": "^6.3.0"
+      "gh-pages": "6.1.1"
     },
-    "brace-expansion@^1.1.7": "1.1.21"
+    "brace-expansion@^1.1.7": "1.1.21",
+    "global-agent": "4.1.3"
   }
 }

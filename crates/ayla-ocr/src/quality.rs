@@ -51,6 +51,19 @@ pub fn inspect(page: u16, raw: &str) -> QualityResult {
         ));
         retry_recommended = true;
     }
+    let mut short_lines = HashMap::new();
+    for line in text.lines().map(str::trim) {
+        if (12..32).contains(&line.chars().count()) {
+            *short_lines.entry(line).or_insert(0usize) += 1;
+        }
+    }
+    if short_lines.values().any(|count| *count > 1) {
+        warnings.push(OcrWarning::page(
+            page,
+            "repeated_short_lines",
+            "Some short lines repeat; compare them with the source page before approving OCR knowledge",
+        ));
+    }
     let chars = text.chars().count();
     if chars == 0 {
         warnings.push(OcrWarning::page(
@@ -255,6 +268,18 @@ mod tests {
         let result = inspect(2, "short");
         assert!(result.retry_recommended);
         assert_eq!(result.warnings[0].code, "short_output");
+    }
+
+    #[test]
+    fn repeated_short_headings_are_reported_without_erasing_source_content() {
+        let input = "English experiment\n\nThe first specimen has pressure 42.75 MPa at 23 degrees.\n\nEnglish experiment\n\nThe second specimen has pressure 18.20 MPa at 31 degrees.";
+        let result = inspect(1, input);
+        assert_eq!(result.text, input);
+        assert!(!result.retry_recommended);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "repeated_short_lines"));
     }
 
     #[test]

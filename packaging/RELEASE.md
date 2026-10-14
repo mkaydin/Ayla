@@ -14,6 +14,10 @@ require a newer glibc and is suitable only for that machine's development checks
 3. Run `npm run release:linux`. It builds on Debian 12/glibc 2.36 with Rust 1.88
    and Node 22.15, tests the installed renderer, and creates AppImage, a Linux
    payload archive, native-library manifest, and `SHA256SUMS` in `release/github`.
+   To preserve an earlier candidate while qualifying a changed working tree, set
+   `AYLA_RELEASE_OUTPUT="$PWD/release/followup-2026-10-14"` for that command.
+   Input hashes in `source-manifest.json` identify the copied working tree;
+   a base commit alone does not identify uncommitted changes.
 4. Verify actual downloaded artifacts on Arch and a supported non-Arch machine,
    with X11/Wayland where available. Complete microphone, real speech, research
    quality, and mixed-workload soak checks in the production readiness plan.

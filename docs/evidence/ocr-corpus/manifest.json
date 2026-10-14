@@ -1,0 +1,65 @@
+{
+  "generated": "2026-10-14T11:58:34.768Z",
+  "publicFixtures": true,
+  "cases": [
+    {
+      "name": "bilingual-columns",
+      "pdf": "bilingual-columns.pdf",
+      "review": [
+        "Preserve Turkish diacritics and decimal comma.",
+        "Read each column coherently; do not interleave unrelated sentences.",
+        "Keep 42.75/42,75 MPa and 23 °C attached to their quantities."
+      ],
+      "criticalTokens": [
+        "42.75",
+        "MPa",
+        "23",
+        "15"
+      ],
+      "expectedWords": [
+        "İstanbul",
+        "Şişe"
+      ]
+    },
+    {
+      "name": "table-equation-figure",
+      "pdf": "table-equation-figure.pdf",
+      "review": [
+        "Table cells must remain associated with the correct specimen.",
+        "Preserve σ, E, ε and multiplication without changing meaning.",
+        "Preserve 210 GPa, 0.002 and 420 MPa.",
+        "Identify Figure 1 and do not invent experimental evidence."
+      ],
+      "criticalTokens": [
+        "42.75",
+        "18.20",
+        "210",
+        "0.002",
+        "420",
+        "MPa",
+        "Figure"
+      ]
+    },
+    {
+      "name": "scanned-rotated-bilingual",
+      "pdf": "scanned-rotated-bilingual.pdf",
+      "review": [
+        "Recover rotated raster text without relying on native PDF text.",
+        "Preserve Turkish diacritics, pressure values, and temperature."
+      ],
+      "criticalTokens": [
+        "42.75",
+        "MPa",
+        "23"
+      ],
+      "expectedWords": [
+        "İstanbul",
+        "Şişe"
+      ]
+    }
+  ],
+  "limits": [
+    "Token presence is a regression signal, not human reading-order/citation acceptance.",
+    "These generated fixtures do not represent all scans, equations, or malformed PDFs."
+  ]
+}

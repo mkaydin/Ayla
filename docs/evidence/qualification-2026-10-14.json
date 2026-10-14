@@ -1,0 +1,285 @@
+{
+  "timestamp": "2026-10-14T12:21:05.385414+00:00",
+  "baseCommit": "8fa9696ae856ad5d5ccdabb9d2172762d13b760a",
+  "workingTreeModified": true,
+  "publicationPerformed": false,
+  "frontendTestsPassed": 82,
+  "rustTestsPassed": 147,
+  "rustTestsIgnored": 3,
+  "npmAdvisories": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0,
+    "total": 0
+  },
+  "checks": {
+    "startup": {
+      "status": "ok",
+      "protocolVersion": 1,
+      "backendVersion": "0.1.0",
+      "dbReady": true,
+      "graphNodes": 0,
+      "graphEdges": 0,
+      "files": 0,
+      "chatSessions": 0,
+      "searchHistory": 0,
+      "quickExtractChars": 3492,
+      "cleanShutdown": true
+    },
+    "documents": {
+      "status": "ok",
+      "commitRestartRetrieval": true,
+      "durableDeletion": true,
+      "failedCommitRecovery": true,
+      "embeddingIdentityGuard": true,
+      "rollbackExclusion": true,
+      "cleanShutdown": true
+    },
+    "backup": {
+      "status": "ok",
+      "coordinatedExport": true,
+      "verifiedFiles": 4,
+      "freshRestore": true,
+      "restoredRetrieval": true,
+      "originalStorePreserved": true
+    },
+    "code": {
+      "status": "ok",
+      "namespace": "ayla_diagnostics",
+      "analyzedEntities": 4,
+      "analyzedRelations": 3,
+      "committedNodes": 4,
+      "committedEdges": 3,
+      "commitBackup": "65dd2155e88b4fb3b3c26efc8a4f673f",
+      "remainingNodesAfterSourceRemoval": 0,
+      "remainingEdgesAfterSourceRemoval": 0,
+      "removalBackup": "dca3043956574fbb938676ffa1618da4",
+      "rollbackRecoveryBackup": "c5d3f8969d93448aaf8f296d1cfb803f",
+      "visibleRuns": 3,
+      "paginatedNodeCount": 1,
+      "paginatedRunCount": 2,
+      "legacyMigration": "0/0",
+      "retainedBackups": 3,
+      "prunedBackups": 2,
+      "entityVectors": 4,
+      "documentVectors": 3,
+      "runDeletion": {
+        "operationId": "b7ef0c05-4af2-4f8a-b07e-f1a6cf9d2d2e",
+        "graphRemoved": true,
+        "vectorsRemoved": true,
+        "artifactsRemoved": true
+      },
+      "revisionReplacement": {
+        "previousEntities": 4,
+        "currentEntities": 5,
+        "diff": {
+          "parentOperationId": "9af2a50a-ad8b-425e-b8fa-a026a3f97705",
+          "addedEntities": 1,
+          "removedEntities": 0,
+          "changedEntities": 0,
+          "addedRelations": 1,
+          "removedRelations": 0,
+          "changedRelations": 0
+        }
+      },
+      "cleanShutdown": true
+    },
+    "ocr": {
+      "status": "ok",
+      "protocolVersion": 1,
+      "backendVersion": "0.1.0",
+      "fixture": "generated-science-fixture.pdf",
+      "fixtureBytes": 801,
+      "chars": 573,
+      "pages": "1",
+      "model": "glm-ocr:latest",
+      "pageDiagnostics": [
+        {
+          "page": 1,
+          "chars": 460,
+          "columns": 1,
+          "headings": [],
+          "figures": [
+            {
+              "x0": 73.11799621582031,
+              "y0": 160.666015625,
+              "x1": 361.32794189453125,
+              "y1": 172.84698486328125,
+              "caption": "Figure 1: Deterministic generated diagnostic page."
+            }
+          ],
+          "layout_source": "pdf_text",
+          "warnings": [
+            {
+              "code": "markdown_fence_removed",
+              "message": "Model-added Markdown fence markers were removed from the page text",
+              "page": 1
+            },
+            {
+              "code": "duplicate_content_removed",
+              "message": "Repeated OCR blocks were removed from the page text",
+              "page": 1
+            },
+            {
+              "code": "repeated_short_lines",
+              "message": "Some short lines repeat; compare them with the source page before approving OCR knowledge",
+              "page": 1
+            }
+          ],
+          "cached": false
+        }
+      ],
+      "warningCount": 3,
+      "knowledgeEntities": 7,
+      "knowledgeRelations": 9,
+      "artifacts": [
+        {
+          "id": "ocr:3cf66439-442c-4a2a-b7c7-48489ade2eb4:markdown",
+          "kind": "ocr_markdown",
+          "media_type": "text/markdown",
+          "bytes": 573
+        },
+        {
+          "id": "ocr:3cf66439-442c-4a2a-b7c7-48489ade2eb4:layout",
+          "kind": "ocr_layout",
+          "media_type": "application/json",
+          "bytes": 2085
+        },
+        {
+          "id": "ocr:3cf66439-442c-4a2a-b7c7-48489ade2eb4:knowledge_base",
+          "kind": "ocr_knowledge_base",
+          "media_type": "text/markdown",
+          "bytes": 2616
+        },
+        {
+          "id": "ocr:3cf66439-442c-4a2a-b7c7-48489ade2eb4:structured",
+          "kind": "ocr_structured",
+          "media_type": "application/json",
+          "bytes": 6396
+        }
+      ],
+      "graphAfterRemoval": {
+        "nodes": 0,
+        "edges": 0
+      },
+      "processEvent": {
+        "operationId": "843f3547-1201-462d-9416-7d899d51ecab",
+        "pid": "3cf66439-442c-4a2a-b7c7-48489ade2eb4"
+      },
+      "temporaryOutputsRemaining": 0,
+      "cleanShutdown": true
+    },
+    "features": {
+      "status": "ok",
+      "dbReady": true,
+      "tts": {
+        "wavBytes": 208820,
+        "header": "RIFF/WAVE"
+      },
+      "chat": {
+        "deltas": 6,
+        "chars": 61
+      },
+      "chatCancellation": {
+        "requestId": "1c128d0d-ead1-44f9-8a97-d03e5ca1c628",
+        "result": "request_cancelled",
+        "pendingRequests": 0
+      },
+      "searchCancellation": {
+        "requestId": "25253f37-46f2-414c-aef0-0aa5d6db0d20",
+        "processId": "6eed4b54-b53e-498f-97bf-5c9c81eed4fd",
+        "result": "request_cancelled",
+        "historyRecordsCreated": 0
+      },
+      "ingestion": {
+        "result": "Ingested: 4 nodes, 6 edges. Entities: 4, facts: 1, relations: 5.",
+        "sourceNodes": 4,
+        "graphNodes": 4,
+        "graphEdges": 6
+      },
+      "cleanup": {
+        "fileRemaining": false,
+        "sourceLinkedNodeRemaining": false
+      },
+      "protocolVersion": 1,
+      "backendVersion": "0.1.0",
+      "cleanShutdown": true
+    },
+    "research": {
+      "status": "ok",
+      "liveModes": [
+        {
+          "mode": "knowledge",
+          "status": "complete",
+          "sources": 12,
+          "downloadedPdfs": 0,
+          "warnings": []
+        },
+        {
+          "mode": "papers",
+          "status": "partial",
+          "sources": 66,
+          "downloadedPdfs": 6,
+          "warnings": [
+            "Search page 1: 1 engines unavailable",
+            "Search page 2: 1 engines unavailable",
+            "Some selected sources could not be fetched"
+          ]
+        }
+      ],
+      "durableHistory": true,
+      "sourceLinkedReports": true,
+      "downloadedPdfProvenance": true
+    },
+    "sourceInstaller": {
+      "status": "ok",
+      "actualSourceBuild": true,
+      "userInstallation": true,
+      "pathsWithSpaces": true,
+      "statusMetadata": true,
+      "uninstall": true,
+      "configurationPreserved": true
+    },
+    "backendEndurance": {
+      "status": "ok",
+      "durationMinutes": 30,
+      "cycles": 160,
+      "speechRuns": 27,
+      "postWarmupBaseline": {
+        "elapsedSeconds": 301,
+        "rssKiB": 242844,
+        "descriptors": 18
+      },
+      "final": {
+        "elapsedSeconds": 1799,
+        "rssKiB": 166232,
+        "descriptors": 18
+      },
+      "peakRssKiB": 303968,
+      "noPendingRequests": true,
+      "cleanShutdown": true,
+      "scope": "Automated backend IPC, storage/retrieval/deletion, and speech; desktop FPS and real microphone acceptance are separate"
+    }
+  },
+  "humanMicrophoneAcceptance": "deferred by user",
+  "remainingGates": [
+    "Human OCR and research quality review",
+    "Native X11 and additional GPUs/devices",
+    "Verified private backup/restore before user-data migration",
+    "Final native Arch qualification",
+    "Signing, publication and downloaded-artifact acceptance"
+  ],
+  "portableCandidate": {
+    "directory": "release/followup-2026-10-14",
+    "buildInputsVerified": 304,
+    "changedBuildInputs": 0,
+    "checksumsVerified": 5,
+    "actualAppImageRuntime": true,
+    "chromiumSandboxEnabled": true,
+    "signed": false,
+    "sourceManifestSha256": "6381480a37a5dbc4d3f2b14ed58845a9f3f546edc760dedfae531176f373376b"
+  },
+  "isolatedTestContainersRemoved": true
+}

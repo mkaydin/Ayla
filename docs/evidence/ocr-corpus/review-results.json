@@ -1,0 +1,142 @@
+{
+  "timestamp": "2026-10-14T12:18:56.110Z",
+  "status": "automated_tokens_passed",
+  "humanAcceptance": "pending",
+  "cases": [
+    {
+      "name": "bilingual-columns",
+      "sourceSha256": "f0b81542be4b5e3a21649826521bedf04d755a4a594513cd7d5213fb23dd0014",
+      "chars": 855,
+      "pages": "1",
+      "missingCriticalTokens": [],
+      "missingExpectedWords": [
+        "Şişe"
+      ],
+      "potentiallyRepeatedLines": [
+        {
+          "line": "Public OCR Fixture — Türkiye / English",
+          "count": 3
+        },
+        {
+          "line": "Türkçe deney",
+          "count": 3
+        },
+        {
+          "line": "İstanbul laboratuvarında ölçülen basınç 42,75 MPa olarak kaydedildi.",
+          "count": 2
+        },
+        {
+          "line": "English experiment",
+          "count": 4
+        },
+        {
+          "line": "Sonuç / Conclusion: This is a generated public fixture, not a scientific finding.",
+          "count": 2
+        }
+      ],
+      "warnings": [
+        {
+          "code": "markdown_fence_removed",
+          "message": "Model-added Markdown fence markers were removed from the page text",
+          "page": 1
+        },
+        {
+          "code": "duplicate_content_removed",
+          "message": "Repeated OCR blocks were removed from the page text",
+          "page": 1
+        },
+        {
+          "code": "repetition_truncated",
+          "message": "A repeated model-output loop was removed",
+          "page": 1
+        },
+        {
+          "code": "repeated_short_lines",
+          "message": "Some short lines repeat; compare them with the source page before approving OCR knowledge",
+          "page": 1
+        },
+        {
+          "code": "generation_incomplete",
+          "message": "Ollama marked the page generation incomplete; usable text was preserved",
+          "page": 1
+        }
+      ],
+      "manualReview": [
+        "Preserve Turkish diacritics and decimal comma.",
+        "Read each column coherently; do not interleave unrelated sentences.",
+        "Keep 42.75/42,75 MPa and 23 °C attached to their quantities."
+      ],
+      "humanReviewed": false
+    },
+    {
+      "name": "table-equation-figure",
+      "sourceSha256": "f3ab54dd4f3b100a96c1f0b90653200a7681a49e0eb7312122b232970a992925",
+      "chars": 625,
+      "pages": "1",
+      "missingCriticalTokens": [],
+      "missingExpectedWords": [],
+      "potentiallyRepeatedLines": [
+        {
+          "line": "Calibration table",
+          "count": 2
+        }
+      ],
+      "warnings": [
+        {
+          "code": "markdown_fence_removed",
+          "message": "Model-added Markdown fence markers were removed from the page text",
+          "page": 1
+        },
+        {
+          "code": "duplicate_content_removed",
+          "message": "Repeated OCR blocks were removed from the page text",
+          "page": 1
+        },
+        {
+          "code": "repeated_short_lines",
+          "message": "Some short lines repeat; compare them with the source page before approving OCR knowledge",
+          "page": 1
+        }
+      ],
+      "manualReview": [
+        "Table cells must remain associated with the correct specimen.",
+        "Preserve σ, E, ε and multiplication without changing meaning.",
+        "Preserve 210 GPa, 0.002 and 420 MPa.",
+        "Identify Figure 1 and do not invent experimental evidence."
+      ],
+      "humanReviewed": false
+    },
+    {
+      "name": "scanned-rotated-bilingual",
+      "sourceSha256": "2bb15daf0d42e133f88fc0262bba2163f5f9def6b66b765f95f432fd5b44e59d",
+      "chars": 320,
+      "pages": "1",
+      "missingCriticalTokens": [],
+      "missingExpectedWords": [
+        "Şişe"
+      ],
+      "potentiallyRepeatedLines": [],
+      "warnings": [
+        {
+          "code": "generation_incomplete",
+          "message": "Ollama marked the page generation incomplete; usable text was preserved",
+          "page": 1
+        },
+        {
+          "code": "layout_unavailable",
+          "message": "No embedded PDF text geometry was available; OCR used a one-column fallback",
+          "page": 1
+        }
+      ],
+      "manualReview": [
+        "Recover rotated raster text without relying on native PDF text.",
+        "Preserve Turkish diacritics, pressure values, and temperature."
+      ],
+      "humanReviewed": false
+    }
+  ],
+  "limits": [
+    "Token presence is a regression signal, not human reading-order/citation acceptance.",
+    "These generated fixtures do not represent all scans, equations, or malformed PDFs."
+  ]
+}
